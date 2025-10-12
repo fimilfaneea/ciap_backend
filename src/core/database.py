@@ -12,6 +12,7 @@ import aiosqlite
 from pathlib import Path
 import logging
 from .models import Base
+from .fts_setup import setup_fts5
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -80,6 +81,10 @@ class DatabaseManager:
 
         # Create indexes for better performance
         await self._create_indexes()
+
+        # Setup FTS5 full-text search
+        await setup_fts5(self.engine)
+        logger.info("FTS5 full-text search configured")
 
         self._initialized = True
         logger.info("Database initialization complete")

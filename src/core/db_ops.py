@@ -4,7 +4,7 @@ Provides CRUD operations and business logic for all models
 """
 
 from typing import List, Optional, Dict, Any, Tuple
-from sqlalchemy import select, update, delete, and_, or_, func, desc
+from sqlalchemy import select, update, delete, and_, or_, func, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 import json
@@ -13,7 +13,7 @@ from .models import (
     Search, SearchResult, Analysis, Product, PriceData, Offer,
     ProductReview, Competitor, MarketTrend, SERPData, SocialSentiment,
     NewsContent, FeatureComparison, Cache, TaskQueue, ScrapingJob,
-    RateLimit, PriceHistory, CompetitorTracking
+    RateLimit, PriceHistory, CompetitorTracking, CompetitorProducts, Insights
 )
 from .database import db_manager
 
@@ -703,3 +703,269 @@ class DatabaseOperations:
         stats['searches_last_24h'] = result.scalar()
 
         return stats
+
+    # =========================
+    # COMPETITOR-PRODUCT RELATIONSHIP OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def link_competitor_product(
+        session: AsyncSession,
+        competitor_id: int,
+        product_id: int,
+        relationship_type: str = "direct_competitor"
+    ) -> CompetitorProducts:
+        """Create relationship between competitor and product"""
+        # Check if relationship already exists
+        result = await session.execute(
+            select(CompetitorProducts).where(
+                and_(
+                    CompetitorProducts.competitor_id == competitor_id,
+                    CompetitorProducts.product_id == product_id
+                )
+            )
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing relationship type if different
+            if existing.relationship_type != relationship_type:
+                existing.relationship_type = relationship_type
+                await session.flush()
+            return existing
+
+        # Create new relationship
+        relationship = CompetitorProducts(
+            competitor_id=competitor_id,
+            product_id=product_id,
+            relationship_type=relationship_type
+        )
+        session.add(relationship)
+        await session.flush()
+        logger.info(f"Linked competitor {competitor_id} with product {product_id} as {relationship_type}")
+        return relationship
+
+    @staticmethod
+    async def get_competitor_products(
+        session: AsyncSession,
+        competitor_id: int
+    ) -> List[Product]:
+        """Get all products linked to a competitor"""
+        result = await session.execute(
+            select(Product)
+            .join(CompetitorProducts)
+            .where(CompetitorProducts.competitor_id == competitor_id)
+            .order_by(Product.product_name)
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_product_competitors(
+        session: AsyncSession,
+        product_id: int
+    ) -> List[Competitor]:
+        """Get all competitors linked to a product"""
+        result = await session.execute(
+            select(Competitor)
+            .join(CompetitorProducts)
+            .where(CompetitorProducts.product_id == product_id)
+            .order_by(Competitor.company_name)
+        )
+        return result.scalars().all()
+
+    # =========================
+    # INSIGHTS OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def create_insight(
+        session: AsyncSession,
+        insight_type: str,
+        title: str,
+        description: str,
+        severity: str = "medium",
+        confidence_score: float = 0.75,
+        **kwargs
+    ) -> Insights:
+        """Create a new insight"""
+        insight = Insights(
+            insight_type=insight_type,
+            title=title,
+            description=description,
+            severity=severity,
+            confidence_score=confidence_score,
+            product_id=kwargs.get('product_id'),
+            competitor_id=kwargs.get('competitor_id'),
+            insight_data=kwargs.get('insight_data'),
+            action_items=kwargs.get('action_items')
+        )
+        session.add(insight)
+        await session.flush()
+        logger.info(f"Created {severity} {insight_type} insight: {title}")
+        return insight
+
+    @staticmethod
+    async def get_unread_insights(
+        session: AsyncSession,
+        severity: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Insights]:
+        """Get unread insights, optionally filtered by severity"""
+        query = select(Insights).where(Insights.is_read == False)
+
+        if severity:
+            query = query.where(Insights.severity == severity)
+
+        query = query.order_by(
+            desc(Insights.created_at)
+        ).limit(limit)
+
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @staticmethod
+    async def mark_insight_read(
+        session: AsyncSession,
+        insight_id: int
+    ):
+        """Mark an insight as read"""
+        stmt = update(Insights).where(Insights.id == insight_id).values(
+            is_read=True
+        )
+        await session.execute(stmt)
+        logger.info(f"Marked insight {insight_id} as read")
+
+    @staticmethod
+    async def get_critical_insights(
+        session: AsyncSession,
+        days: int = 7
+    ) -> List[Insights]:
+        """Get critical insights from the last N days"""
+        cutoff_date = datetime.utcnow() - timedelta(days=days)
+        result = await session.execute(
+            select(Insights).where(
+                and_(
+                    Insights.severity == "critical",
+                    Insights.created_at >= cutoff_date
+                )
+            ).order_by(desc(Insights.created_at))
+        )
+        return result.scalars().all()
+
+    # =========================
+    # FULL-TEXT SEARCH OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def search_products_fts(
+        session: AsyncSession,
+        search_query: str,
+        limit: int = 20
+    ) -> List[Product]:
+        """Full-text search on products using FTS5"""
+        from sqlalchemy import text
+
+        # First get matching product IDs from FTS
+        fts_query = text("""
+            SELECT rowid
+            FROM products_fts
+            WHERE products_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """)
+
+        result = await session.execute(
+            fts_query,
+            {"query": search_query, "limit": limit}
+        )
+
+        product_ids = [row[0] for row in result]
+
+        if not product_ids:
+            logger.info(f"FTS search for '{search_query}' returned 0 products")
+            return []
+
+        # Now get the actual Product objects using ORM
+        products = await session.execute(
+            select(Product).where(Product.id.in_(product_ids))
+        )
+        products = products.scalars().all()
+
+        logger.info(f"FTS search for '{search_query}' returned {len(products)} products")
+        return products
+
+    @staticmethod
+    async def search_competitors_fts(
+        session: AsyncSession,
+        search_query: str,
+        limit: int = 20
+    ) -> List[Competitor]:
+        """Full-text search on competitors using FTS5"""
+        from sqlalchemy import text
+
+        # First get matching competitor IDs from FTS
+        fts_query = text("""
+            SELECT rowid
+            FROM competitors_fts
+            WHERE competitors_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """)
+
+        result = await session.execute(
+            fts_query,
+            {"query": search_query, "limit": limit}
+        )
+
+        competitor_ids = [row[0] for row in result]
+
+        if not competitor_ids:
+            logger.info(f"FTS search for '{search_query}' returned 0 competitors")
+            return []
+
+        # Now get the actual Competitor objects using ORM
+        competitors = await session.execute(
+            select(Competitor).where(Competitor.id.in_(competitor_ids))
+        )
+        competitors = competitors.scalars().all()
+
+        logger.info(f"FTS search for '{search_query}' returned {len(competitors)} competitors")
+        return competitors
+
+    @staticmethod
+    async def search_news_fts(
+        session: AsyncSession,
+        search_query: str,
+        limit: int = 20
+    ) -> List[NewsContent]:
+        """Full-text search on news content using FTS5"""
+        from sqlalchemy import text
+
+        # First get matching news IDs from FTS
+        fts_query = text("""
+            SELECT rowid
+            FROM news_content_fts
+            WHERE news_content_fts MATCH :query
+            ORDER BY rank
+            LIMIT :limit
+        """)
+
+        result = await session.execute(
+            fts_query,
+            {"query": search_query, "limit": limit}
+        )
+
+        news_ids = [row[0] for row in result]
+
+        if not news_ids:
+            logger.info(f"FTS search for '{search_query}' returned 0 news items")
+            return []
+
+        # Now get the actual NewsContent objects using ORM
+        news_items = await session.execute(
+            select(NewsContent).where(NewsContent.id.in_(news_ids))
+        )
+        news_items = news_items.scalars().all()
+
+        logger.info(f"FTS search for '{search_query}' returned {len(news_items)} news items")
+        return news_items

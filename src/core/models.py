@@ -3,7 +3,7 @@ Database Models for CIAP - Competitive Intelligence Automation Platform
 Includes all data models for competitive intelligence, pricing, reviews, and analysis
 """
 
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Float, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Float, Boolean, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -108,6 +108,8 @@ class Product(Base):
     offers = relationship("Offer", back_populates="product", cascade="all, delete-orphan")
     reviews = relationship("ProductReview", back_populates="product", cascade="all, delete-orphan")
     features = relationship("FeatureComparison", back_populates="product", cascade="all, delete-orphan")
+    competitor_relationships = relationship("CompetitorProducts", back_populates="product", cascade="all, delete-orphan")
+    insights = relationship("Insights", back_populates="product", cascade="all, delete-orphan")
 
 
 class PriceData(Base):
@@ -197,6 +199,10 @@ class Competitor(Base):
     funding_info = Column(JSON, nullable=True)  # Financial information
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+
+    # Relationships
+    product_relationships = relationship("CompetitorProducts", back_populates="competitor", cascade="all, delete-orphan")
+    insights = relationship("Insights", back_populates="competitor", cascade="all, delete-orphan")
 
 
 class MarketTrend(Base):
@@ -381,3 +387,49 @@ class CompetitorTracking(Base):
     old_value = Column(JSON, nullable=True)
     new_value = Column(JSON, nullable=True)
     detected_at = Column(DateTime, default=func.now())
+
+
+# =========================
+# JUNCTION TABLE & INSIGHTS MODELS
+# =========================
+
+class CompetitorProducts(Base):
+    """Junction table for many-to-many relationship between competitors and products"""
+    __tablename__ = "competitor_products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"))
+    product_id = Column(Integer, ForeignKey("products.id"))
+    relationship_type = Column(String(50))  # 'direct_competitor', 'alternative', 'substitute'
+    created_at = Column(DateTime, default=func.now())
+
+    # Unique constraint to prevent duplicates
+    __table_args__ = (
+        UniqueConstraint('competitor_id', 'product_id', name='unique_competitor_product'),
+    )
+
+    # Relationships
+    competitor = relationship("Competitor", back_populates="product_relationships")
+    product = relationship("Product", back_populates="competitor_relationships")
+
+
+class Insights(Base):
+    """LLM-generated actionable insights"""
+    __tablename__ = "insights"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    insight_type = Column(String(100), nullable=False)  # 'price_trend', 'sentiment_summary', 'competitive_gap'
+    title = Column(String(500))
+    description = Column(Text)
+    insight_data = Column(JSON)  # Structured data supporting the insight
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=True)
+    competitor_id = Column(Integer, ForeignKey("competitors.id"), nullable=True)
+    confidence_score = Column(Float)  # 0.00 to 1.00
+    severity = Column(String(20))  # 'low', 'medium', 'high', 'critical'
+    action_items = Column(JSON)  # Recommended actions
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=func.now())
+
+    # Relationships
+    product = relationship("Product", back_populates="insights")
+    competitor = relationship("Competitor", back_populates="insights")

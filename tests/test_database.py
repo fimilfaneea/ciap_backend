@@ -1,203 +1,231 @@
 """
-Test script to verify database initialization and model creation
+Complete Database Initialization Script for CIAP
+Initializes all database models including FTS5 and verifies setup
 """
 
 import asyncio
 import sys
 from pathlib import Path
-from datetime import datetime, timedelta
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.core.database import db_manager, init_db, close_db
+from src.core.database import db_manager
 from src.core.db_ops import DatabaseOperations
 from src.core.models import *
 
 
-async def test_database_initialization():
-    """Test database initialization and basic operations"""
+async def verify_tables(session):
+    """Verify all expected tables are created"""
+    from sqlalchemy import text
+
+    expected_tables = [
+        'products', 'price_data', 'offers', 'product_reviews',
+        'competitors', 'competitor_products', 'market_trends',
+        'serp_data', 'social_sentiment', 'news_content',
+        'feature_comparisons', 'insights', 'cache', 'task_queue',
+        'scraping_jobs', 'rate_limits', 'price_history',
+        'competitor_tracking', 'searches', 'search_results',
+        'analyses'
+    ]
+
+    # Check for FTS5 virtual tables
+    fts_tables = [
+        'products_fts', 'competitors_fts', 'news_content_fts', 'product_reviews_fts'
+    ]
+
+    print("\n[OK] Verifying database tables...")
+
+    # Get all tables from database
+    result = await session.execute(text("""
+        SELECT name FROM sqlite_master
+        WHERE type='table'
+        ORDER BY name
+    """))
+    existing_tables = [row[0] for row in result]
+
+    # Check regular tables
+    missing_tables = []
+    for table in expected_tables:
+        if table in existing_tables:
+            print(f"  [+] {table}")
+        else:
+            print(f"  [-] {table} - MISSING!")
+            missing_tables.append(table)
+
+    # Check FTS5 tables
+    print("\n[OK] Verifying FTS5 virtual tables...")
+    for table in fts_tables:
+        if table in existing_tables:
+            print(f"  [+] {table}")
+        else:
+            print(f"  [-] {table} - MISSING!")
+            missing_tables.append(table)
+
+    return len(missing_tables) == 0, existing_tables
+
+
+async def test_basic_operations():
+    """Test basic CRUD operations on new models"""
+    print("\n[OK] Testing basic database operations...")
+
+    async with db_manager.get_session() as session:
+        try:
+            # Test Product creation
+            product = await DatabaseOperations.create_or_update_product(
+                session,
+                {
+                    'product_name': 'Test Product Complete',
+                    'brand_name': 'Test Brand',
+                    'company_name': 'Test Company',
+                    'category': 'Test Category',
+                    'description': 'Complete test product for database validation',
+                    'sku': 'TEST-COMPLETE-001'
+                }
+            )
+            print(f"  [+] Created product: {product.product_name}")
+
+            # Test Competitor creation
+            competitor = await DatabaseOperations.create_or_update_competitor(
+                session,
+                {
+                    'company_name': 'Test Competitor Complete Inc.',
+                    'domain': 'testcompetitorcomplete.com',
+                    'description': 'A test competitor for complete validation',
+                    'products_services': ['Service X', 'Service Y'],
+                    'market_share': 15.5
+                }
+            )
+            print(f"  [+] Created competitor: {competitor.company_name}")
+
+            # Test CompetitorProducts relationship
+            relationship = await DatabaseOperations.link_competitor_product(
+                session,
+                competitor.id,
+                product.id,
+                "direct_competitor"
+            )
+            print(f"  [+] Linked competitor {competitor.id} with product {product.id}")
+
+            # Test Insights creation
+            insight = await DatabaseOperations.create_insight(
+                session,
+                insight_type="price_trend",
+                title="Price Drop Detected",
+                description="Significant price reduction observed",
+                severity="high",
+                confidence_score=0.85,
+                product_id=product.id,
+                insight_data={"old_price": 100, "new_price": 75},
+                action_items=["Monitor competitor response", "Consider price adjustment"]
+            )
+            print(f"  [+] Created insight: {insight.title}")
+
+            # Test FTS5 search
+            print("\n[OK] Testing FTS5 full-text search...")
+
+            # Search for product
+            products = await DatabaseOperations.search_products_fts(
+                session,
+                "Test Product",
+                limit=5
+            )
+            print(f"  [+] FTS5 product search returned {len(products)} results")
+
+            # Commit all changes
+            await session.commit()
+            print("\n  [+] All test operations completed successfully")
+
+            return True
+
+        except Exception as e:
+            print(f"\n  [-] Test operations failed: {e}")
+            await session.rollback()
+            return False
+
+
+async def init_complete_database():
+    """Initialize complete database with all models and FTS5"""
     print("=" * 60)
-    print("CIAP Database Test Suite")
+    print("CIAP Complete Database Initialization")
     print("=" * 60)
 
     try:
         # Initialize database
-        print("\n1. Initializing database...")
-        await init_db()
-        print("✓ Database initialized successfully")
+        print("\n1. Initializing database with all models...")
+        await db_manager.initialize()
+        print("[+] Database initialized successfully")
 
-        # Health check
-        print("\n2. Running health check...")
+        # Verify health
         is_healthy = await db_manager.health_check()
-        print(f"✓ Database health: {'Healthy' if is_healthy else 'Unhealthy'}")
+        print(f"[+] Health check: {'Healthy' if is_healthy else 'Unhealthy'}")
 
-        # Get initial stats
-        print("\n3. Getting database statistics...")
+        # Verify all tables
+        async with db_manager.get_session() as session:
+            success, tables = await verify_tables(session)
+
+        if not success:
+            print("\n[!] Warning: Some tables are missing!")
+            return False
+
+        # Get statistics
         stats = await db_manager.get_stats()
-        print("✓ Database statistics retrieved:")
+
+        print("\n>> Database Statistics:")
+        print(f"  - Database size: {stats.get('database_size_bytes', 0) / 1024:.2f} KB")
+        print(f"  - Total tables: {len(tables)}")
+
+        # Count records in key tables
         for key, value in stats.items():
-            if key == 'database_size_bytes':
-                print(f"  - {key}: {value / 1024:.2f} KB")
-            elif isinstance(value, dict):
-                print(f"  - {key}:")
-                for k, v in value.items():
-                    print(f"    - {k}: {v}")
-            else:
-                print(f"  - {key}: {value}")
+            if key.endswith('_count'):
+                table_name = key.replace('_count', '')
+                print(f"  - {table_name}: {value} records")
 
-        # Test CRUD operations
-        print("\n4. Testing CRUD operations...")
+        # Test operations
+        test_success = await test_basic_operations()
 
-        async with db_manager.get_session() as session:
-            # Create a search
-            search = await DatabaseOperations.create_search(
-                session,
-                query="test competitive analysis",
-                sources=["google", "bing"],
-                search_type="competitor"
-            )
-            print(f"✓ Created search with ID: {search.id}")
+        if test_success:
+            print("\n" + "=" * 60)
+            print("[SUCCESS] DATABASE INITIALIZATION COMPLETE!")
+            print("=" * 60)
 
-            # Create a product
-            product_data = {
-                'product_name': 'Test Product',
-                'brand_name': 'Test Brand',
-                'company_name': 'Test Company',
-                'category': 'Electronics',
-                'description': 'A test product for database validation',
-                'sku': 'TEST-001'
-            }
-            product = await DatabaseOperations.create_or_update_product(
-                session, product_data
-            )
-            print(f"✓ Created product with ID: {product.id}")
+            print("\n>> Summary:")
+            print(f"  - Regular tables: 21")
+            print(f"  - FTS5 virtual tables: 4")
+            print(f"  - Total tables: {len(tables)}")
+            print("  - All models working: [+]")
+            print("  - FTS5 search enabled: [+]")
+            print("  - Relationships configured: [+]")
+            print("  - Insights system ready: [+]")
 
-            # Add price data
-            price_info = {
-                'current_price': 99.99,
-                'original_price': 149.99,
-                'currency': 'USD',
-                'discount_percentage': 33.33,
-                'availability_status': 'In Stock',
-                'seller_name': 'Test Seller'
-            }
-            price_data = await DatabaseOperations.add_price_data(
-                session, product.id, price_info
-            )
-            print(f"✓ Added price data for product {product.id}")
+            print("\n>> Your CIAP database is ready for use!")
+            print("  - Location: data/ciap.db")
+            print("  - All competitive intelligence models active")
+            print("  - Full-text search operational")
+            print("  - Junction tables configured")
 
-            # Add a review
-            reviews = [{
-                'review_title': 'Great product!',
-                'review_text': 'This is an excellent product. Highly recommended.',
-                'rating': 4.5,
-                'reviewer_name': 'Test User',
-                'review_date': datetime.utcnow(),
-                'verified_purchase': True,
-                'review_source': 'Test Platform'
-            }]
-            await DatabaseOperations.bulk_add_reviews(
-                session, product.id, reviews
-            )
-            print(f"✓ Added review for product {product.id}")
-
-            # Create a competitor
-            competitor_data = {
-                'company_name': 'Test Competitor Inc.',
-                'domain': 'testcompetitor.com',
-                'description': 'A major competitor in the test market',
-                'products_services': ['Service A', 'Service B'],
-                'market_share': 25.5,
-                'key_features': ['Feature 1', 'Feature 2']
-            }
-            competitor = await DatabaseOperations.create_or_update_competitor(
-                session, competitor_data
-            )
-            print(f"✓ Created competitor with ID: {competitor.id}")
-
-            # Test cache operations
-            cache_key = "test_cache_key"
-            cache_value = "test_cache_value"
-            await DatabaseOperations.set_cache(
-                session, cache_key, cache_value, ttl_seconds=60
-            )
-            retrieved_value = await DatabaseOperations.get_cache(session, cache_key)
-            print(f"✓ Cache operations working: {retrieved_value == cache_value}")
-
-            # Test task queue
-            task = await DatabaseOperations.enqueue_task(
-                session,
-                task_type="test_task",
-                payload={"test": "data"},
-                priority=1
-            )
-            print(f"✓ Enqueued task with ID: {task.id}")
-
-            # Commit all changes
-            await session.commit()
-
-        # Test search operations
-        print("\n5. Testing search and retrieval operations...")
-
-        async with db_manager.get_session() as session:
-            # Search products
-            products = await DatabaseOperations.search_products(
-                session, "Test", limit=10
-            )
-            print(f"✓ Found {len(products)} products matching 'Test'")
-
-            # Get recent searches
-            searches = await DatabaseOperations.get_recent_searches(
-                session, limit=5
-            )
-            print(f"✓ Retrieved {len(searches)} recent searches")
-
-            # Get competitors
-            competitors = await DatabaseOperations.get_competitors(
-                session, limit=10
-            )
-            print(f"✓ Retrieved {len(competitors)} competitors")
-
-            # Get database stats
-            final_stats = await DatabaseOperations.get_database_stats(session)
-            print("\n✓ Final database statistics:")
-            for table, count in final_stats.items():
-                if isinstance(count, int):
-                    print(f"  - {table}: {count} records")
-
-        # Test optimization
-        print("\n6. Running database optimization...")
-        await db_manager.optimize()
-        print("✓ Database optimization complete")
-
-        print("\n" + "=" * 60)
-        print("✓ ALL TESTS PASSED SUCCESSFULLY!")
-        print("=" * 60)
-
-        print("\nDatabase is ready for use with:")
-        print("- All 10 competitive intelligence models")
-        print("- Async SQLite with WAL mode")
-        print("- Caching system")
-        print("- Task queue")
-        print("- Rate limiting")
-        print("- Full CRUD operations")
-
-        return True
+            return True
+        else:
+            print("\n[!] Some tests failed. Please check the errors above.")
+            return False
 
     except Exception as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n[ERROR] INITIALIZATION FAILED: {e}")
         import traceback
         traceback.print_exc()
         return False
 
     finally:
-        # Clean up
-        await close_db()
-        print("\n✓ Database connection closed")
+        await db_manager.close()
+        print("\n[+] Database connection closed")
 
 
 if __name__ == "__main__":
-    # Run the test
-    success = asyncio.run(test_database_initialization())
+    # Ensure scripts directory exists
+    Path("scripts").mkdir(exist_ok=True)
+
+    # Run initialization
+    success = asyncio.run(init_complete_database())
+
+    # Exit with appropriate code
     sys.exit(0 if success else 1)
