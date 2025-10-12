@@ -84,7 +84,7 @@ class SearchService:
 
         query = search.query
         search_type = search.search_type
-        max_results = search.metadata.get("max_results", 10) if search.metadata else 10
+        max_results = search.search_metadata.get("max_results", 10) if search.search_metadata else 10
 
         if search_type == "competitor":
             # For competitor search, modify query
@@ -110,7 +110,7 @@ class SearchService:
                 snippet=result.get("snippet", ""),
                 source=result.get("source", "unknown"),
                 position=result.get("position", 0),
-                metadata=result
+                result_metadata=result
             )
             self.db.add(db_result)
 
@@ -163,7 +163,7 @@ class SearchService:
                 confidence_score=analysis_data.get("confidence_score"),
                 llm_provider=analysis_data.get("llm_provider", "unknown"),
                 llm_model=analysis_data.get("llm_model", "unknown"),
-                metadata=analysis_data
+                analysis_metadata=analysis_data
             )
             self.db.add(analysis)
 
@@ -187,7 +187,7 @@ class SearchService:
                         name=comp_name,
                         strengths=insights.get("strengths", []),
                         weaknesses=insights.get("weaknesses", []),
-                        metadata={"source": "analysis"}
+                        profile_metadata={"source": "analysis"}
                     )
                     self.db.add(profile)
 

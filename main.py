@@ -139,7 +139,7 @@ async def create_search(
         query=request.query,
         search_type=request.search_type,
         status="pending",
-        metadata={"max_results": request.max_results}
+        search_metadata={"max_results": request.max_results}
     )
     db.add(search)
     db.commit()

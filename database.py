@@ -1,8 +1,7 @@
 """Database models and setup for CIAP using SQLAlchemy with SQLite"""
 from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Float, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from config import DATABASE_URL
 
 # Create base class for models
@@ -19,7 +18,7 @@ class Search(Base):
     status = Column(String(20), default="pending")  # pending, scraping, analyzing, completed, failed
     created_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
-    metadata = Column(JSON, nullable=True)  # Store additional search parameters
+    search_metadata = Column(JSON, nullable=True)  # Store additional search parameters
 
 
 class SearchResult(Base):
@@ -35,7 +34,7 @@ class SearchResult(Base):
     position = Column(Integer)  # Ranking position in search results
     scraped_at = Column(DateTime, default=datetime.utcnow)
     raw_content = Column(Text, nullable=True)  # Full scraped content if available
-    metadata = Column(JSON, nullable=True)  # Additional scraped data
+    result_metadata = Column(JSON, nullable=True)  # Additional scraped data
 
 
 class Analysis(Base):
@@ -52,7 +51,7 @@ class Analysis(Base):
     llm_provider = Column(String(20))  # openai, anthropic
     llm_model = Column(String(50))  # specific model used
     created_at = Column(DateTime, default=datetime.utcnow)
-    metadata = Column(JSON, nullable=True)  # Additional analysis data
+    analysis_metadata = Column(JSON, nullable=True)  # Additional analysis data
 
 
 class CompetitorProfile(Base):
@@ -67,7 +66,7 @@ class CompetitorProfile(Base):
     weaknesses = Column(JSON, nullable=True)  # List of identified weaknesses
     products = Column(JSON, nullable=True)  # List of products/services
     last_updated = Column(DateTime, default=datetime.utcnow)
-    metadata = Column(JSON, nullable=True)
+    profile_metadata = Column(JSON, nullable=True)
 
 
 # Database initialization
