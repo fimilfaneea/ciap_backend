@@ -87,6 +87,86 @@ class DatabaseOperations:
         return result.scalars().all()
 
     # =========================
+    # SEARCH RESULT OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def bulk_insert_results(
+        session: AsyncSession,
+        search_id: int,
+        results: List[Dict[str, Any]]
+    ) -> List[SearchResult]:
+        """Bulk insert search results"""
+        result_objects = []
+        for result in results:
+            search_result = SearchResult(
+                search_id=search_id,
+                title=result.get('title', 'Untitled'),
+                url=result.get('url'),
+                snippet=result.get('snippet'),
+                source=result.get('source', 'unknown'),
+                rank=result.get('rank'),
+                metadata=result.get('metadata', {})
+            )
+            result_objects.append(search_result)
+
+        session.add_all(result_objects)
+        await session.flush()
+        logger.info(f"Bulk inserted {len(result_objects)} search results for search {search_id}")
+        return result_objects
+
+    @staticmethod
+    async def get_search_results(
+        session: AsyncSession,
+        search_id: int,
+        source: Optional[str] = None,
+        limit: Optional[int] = None
+    ) -> List[SearchResult]:
+        """Get search results with optional filtering"""
+        query = select(SearchResult).where(SearchResult.search_id == search_id)
+
+        if source:
+            query = query.where(SearchResult.source == source)
+
+        query = query.order_by(SearchResult.rank.nullslast(), SearchResult.created_at)
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @staticmethod
+    async def update_result_analysis(
+        session: AsyncSession,
+        result_id: int,
+        analysis: Dict[str, Any]
+    ):
+        """Update analysis data for a search result"""
+        stmt = update(SearchResult).where(SearchResult.id == result_id).values(
+            analysis=analysis,
+            is_analyzed=True,
+            analyzed_at=datetime.utcnow()
+        )
+        await session.execute(stmt)
+        logger.info(f"Updated analysis for search result {result_id}")
+
+    @staticmethod
+    async def count_results(
+        session: AsyncSession,
+        search_id: int,
+        source: Optional[str] = None
+    ) -> int:
+        """Count search results for a search"""
+        query = select(func.count(SearchResult.id)).where(SearchResult.search_id == search_id)
+
+        if source:
+            query = query.where(SearchResult.source == source)
+
+        result = await session.execute(query)
+        return result.scalar() or 0
+
+    # =========================
     # PRODUCT OPERATIONS
     # =========================
 
@@ -446,6 +526,28 @@ class DatabaseOperations:
 
         return False
 
+    @staticmethod
+    async def get_pending_tasks(
+        session: AsyncSession,
+        task_type: Optional[str] = None,
+        limit: int = 100
+    ) -> List[TaskQueue]:
+        """Get list of pending tasks with optional filtering"""
+        query = select(TaskQueue).where(TaskQueue.status == "pending")
+
+        if task_type:
+            query = query.where(TaskQueue.task_type == task_type)
+
+        query = query.order_by(
+            TaskQueue.priority.desc(),
+            TaskQueue.scheduled_at
+        ).limit(limit)
+
+        result = await session.execute(query)
+        tasks = result.scalars().all()
+        logger.info(f"Retrieved {len(tasks)} pending tasks")
+        return tasks
+
     # =========================
     # CACHE OPERATIONS
     # =========================
@@ -495,6 +597,21 @@ class DatabaseOperations:
         session.add(cache_entry)
         await session.flush()
         logger.debug(f"Cached key: {key} with TTL: {ttl_seconds}s")
+
+    @staticmethod
+    async def delete_cache(
+        session: AsyncSession,
+        key: str
+    ) -> bool:
+        """Delete specific cache entry by key"""
+        result = await session.execute(
+            delete(Cache).where(Cache.key == key)
+        )
+        if result.rowcount > 0:
+            logger.info(f"Deleted cache entry for key: {key}")
+            return True
+        logger.debug(f"No cache entry found for key: {key}")
+        return False
 
     @staticmethod
     async def cleanup_expired_cache(session: AsyncSession) -> int:
@@ -653,6 +770,37 @@ class DatabaseOperations:
             session.add(rate_limit)
 
         await session.flush()
+
+    @staticmethod
+    async def reset_rate_limits(
+        session: AsyncSession,
+        scraper_name: Optional[str] = None
+    ) -> int:
+        """Reset rate limits for all or specific scrapers"""
+        if scraper_name:
+            # Reset specific scraper
+            stmt = update(RateLimit).where(
+                RateLimit.scraper_name == scraper_name
+            ).values(
+                request_count=0,
+                reset_at=datetime.utcnow()
+            )
+        else:
+            # Reset all scrapers
+            stmt = update(RateLimit).values(
+                request_count=0,
+                reset_at=datetime.utcnow()
+            )
+
+        result = await session.execute(stmt)
+        count = result.rowcount
+
+        if scraper_name:
+            logger.info(f"Reset rate limit for scraper: {scraper_name}")
+        else:
+            logger.info(f"Reset rate limits for {count} scrapers")
+
+        return count
 
     # =========================
     # STATISTICS
