@@ -105,8 +105,7 @@ class DatabaseOperations:
                 url=result.get('url'),
                 snippet=result.get('snippet'),
                 source=result.get('source', 'unknown'),
-                rank=result.get('rank'),
-                metadata=result.get('metadata', {})
+                position=result.get('rank', result.get('position'))
             )
             result_objects.append(search_result)
 
@@ -128,7 +127,7 @@ class DatabaseOperations:
         if source:
             query = query.where(SearchResult.source == source)
 
-        query = query.order_by(SearchResult.rank.nullslast(), SearchResult.created_at)
+        query = query.order_by(SearchResult.position.nullslast(), SearchResult.scraped_at)
 
         if limit:
             query = query.limit(limit)
@@ -143,11 +142,20 @@ class DatabaseOperations:
         analysis: Dict[str, Any]
     ):
         """Update analysis data for a search result"""
-        stmt = update(SearchResult).where(SearchResult.id == result_id).values(
-            analysis=analysis,
-            is_analyzed=True,
-            analyzed_at=datetime.utcnow()
-        )
+        update_data = {}
+
+        # Map analysis fields to SearchResult model fields
+        if 'sentiment' in analysis or 'sentiment_score' in analysis:
+            update_data['sentiment_score'] = analysis.get('sentiment_score', analysis.get('sentiment'))
+        if 'competitors' in analysis:
+            update_data['competitor_mentioned'] = analysis.get('competitors')
+        if 'keywords' in analysis:
+            update_data['keywords'] = analysis.get('keywords')
+
+        # Store all analysis data in result_metadata
+        update_data['result_metadata'] = analysis
+
+        stmt = update(SearchResult).where(SearchResult.id == result_id).values(**update_data)
         await session.execute(stmt)
         logger.info(f"Updated analysis for search result {result_id}")
 

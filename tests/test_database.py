@@ -144,6 +144,106 @@ async def test_basic_operations():
             return False
 
 
+async def test_new_operations():
+    """Test newly implemented database operations"""
+    print("\n[OK] Testing newly implemented operations...")
+
+    async with db_manager.get_session() as session:
+        try:
+            # Create a test search for SearchResult operations
+            search = await DatabaseOperations.create_search(
+                session,
+                query="test search for new operations",
+                sources=["google", "bing"],
+                search_type="test"
+            )
+            print(f"  [+] Created test search with ID: {search.id}")
+
+            # Test SearchResult operations
+            print("\n  Testing SearchResult operations:")
+            test_results = [
+                {
+                    "title": "Result 1",
+                    "url": "https://example.com/1",
+                    "snippet": "Test snippet 1",
+                    "source": "google",
+                    "rank": 1,
+                    "metadata": {"score": 0.95}
+                },
+                {
+                    "title": "Result 2",
+                    "url": "https://example.com/2",
+                    "snippet": "Test snippet 2",
+                    "source": "bing",
+                    "rank": 1,
+                    "metadata": {"score": 0.90}
+                }
+            ]
+
+            results = await DatabaseOperations.bulk_insert_results(
+                session, search.id, test_results
+            )
+            print(f"    [+] Bulk inserted {len(results)} search results")
+
+            all_results = await DatabaseOperations.get_search_results(session, search.id)
+            print(f"    [+] Retrieved {len(all_results)} search results")
+
+            if results:
+                await DatabaseOperations.update_result_analysis(
+                    session, results[0].id, {"sentiment_score": 0.8, "keywords": ["test", "example"]}
+                )
+                print(f"    [+] Updated analysis for result ID: {results[0].id}")
+
+            count = await DatabaseOperations.count_results(session, search.id)
+            print(f"    [+] Counted {count} results for search")
+
+            # Test Task Queue operations
+            print("\n  Testing Task Queue operations:")
+            task = await DatabaseOperations.enqueue_task(
+                session, "test_task", {"data": "test"}, priority=10
+            )
+            print(f"    [+] Enqueued task with ID: {task.id}")
+
+            pending_tasks = await DatabaseOperations.get_pending_tasks(session, limit=5)
+            print(f"    [+] Retrieved {len(pending_tasks)} pending tasks")
+
+            # Test Cache operations
+            print("\n  Testing Cache operations:")
+            await DatabaseOperations.set_cache(
+                session, "test_key", "test_value", ttl_seconds=3600
+            )
+            print("    [+] Set cache entry")
+
+            cached_value = await DatabaseOperations.get_cache(session, "test_key")
+            print(f"    [+] Retrieved cached value: {cached_value}")
+
+            deleted = await DatabaseOperations.delete_cache(session, "test_key")
+            print(f"    [+] Deleted cache entry: {deleted}")
+
+            # Test Rate Limit operations
+            print("\n  Testing Rate Limit operations:")
+            await DatabaseOperations.update_rate_limit(session, "test_scraper")
+            print("    [+] Updated rate limit")
+
+            can_proceed = await DatabaseOperations.check_rate_limit(
+                session, "test_scraper", requests_per_minute=10
+            )
+            print(f"    [+] Rate limit check: {can_proceed}")
+
+            reset_count = await DatabaseOperations.reset_rate_limits(session, "test_scraper")
+            print(f"    [+] Reset rate limits: {reset_count} entries")
+
+            await session.commit()
+            print("\n  [+] All new operations tested successfully")
+
+            return True
+
+        except Exception as e:
+            print(f"\n  [-] New operations test failed: {e}")
+            await session.rollback()
+            return False
+
+
 async def init_complete_database():
     """Initialize complete database with all models and FTS5"""
     print("=" * 60)
@@ -181,8 +281,12 @@ async def init_complete_database():
                 table_name = key.replace('_count', '')
                 print(f"  - {table_name}: {value} records")
 
-        # Test operations
+        # Test basic operations
         test_success = await test_basic_operations()
+
+        # Test newly implemented operations
+        if test_success:
+            test_success = await test_new_operations()
 
         if test_success:
             print("\n" + "=" * 60)
@@ -197,6 +301,10 @@ async def init_complete_database():
             print("  - FTS5 search enabled: [+]")
             print("  - Relationships configured: [+]")
             print("  - Insights system ready: [+]")
+            print("  - SearchResult operations: [+]")
+            print("  - Task Queue operations: [+]")
+            print("  - Cache operations: [+]")
+            print("  - Rate Limiting operations: [+]")
 
             print("\n>> Your CIAP database is ready for use!")
             print("  - Location: data/ciap.db")
