@@ -54,14 +54,12 @@ class DatabaseManager:
 
         logger.info(f"Initializing database: {self.database_url}")
 
-        # Create async engine with connection pooling
+        # Create async engine
+        # Note: SQLite doesn't support connection pooling (uses NullPool)
         self.engine = create_async_engine(
             self.database_url,
             echo=False,  # Set to True for SQL debugging
-            pool_size=5,  # Number of connections in pool
-            max_overflow=10,  # Max overflow connections
             pool_pre_ping=True,  # Verify connections are alive
-            pool_recycle=3600,  # Recycle connections after 1 hour
         )
 
         # Create session factory

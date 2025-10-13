@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.core.database import db_manager
 from src.core.db_ops import DatabaseOperations
 from src.core.models import *
+from sqlalchemy import select
+from datetime import datetime
 
 
 async def verify_tables(session):
@@ -244,6 +246,208 @@ async def test_new_operations():
             return False
 
 
+async def test_bulk_operations():
+    """Test all bulk operations including chunking, batching, streaming, and pagination"""
+    print("\n[OK] Testing bulk operations...")
+
+    async with db_manager.get_session() as session:
+        try:
+            # 1. Test chunked bulk insert
+            print("\n  Testing chunked bulk insert:")
+            search = await DatabaseOperations.create_search(
+                session, "bulk test", ["google"], "test"
+            )
+
+            # Create large dataset
+            large_results = [
+                {
+                    "title": f"Result {i}",
+                    "url": f"https://example.com/{i}",
+                    "snippet": f"Test snippet {i}",
+                    "source": "google",
+                    "rank": i
+                }
+                for i in range(1000)  # 1000 results to test chunking
+            ]
+
+            # Progress tracking
+            progress_updates = []
+            async def track_progress(current, total, processed):
+                progress_updates.append((current, total, processed))
+                print(f"    Chunk {current}/{total}: {processed} items processed")
+
+            results = await DatabaseOperations.bulk_insert_results_chunked(
+                session, search.id, large_results,
+                chunk_size=100, progress_callback=track_progress
+            )
+            print(f"    [+] Inserted {len(results)} results in chunks")
+            assert len(progress_updates) == 10  # 1000/100 = 10 chunks
+            assert len(results) == 1000
+
+            # 2. Test batch updates
+            print("\n  Testing batch updates:")
+            # Prepare update data for first 50 results
+            update_data = []
+            for i, r in enumerate(results[:50]):
+                update_data.append({
+                    "id": r.id,
+                    "sentiment_score": 0.5 + (i * 0.01)  # Varying scores
+                })
+
+            updated_count = await DatabaseOperations.batch_update_search_results(
+                session, update_data
+            )
+            print(f"    [+] Batch updated {updated_count} results")
+            assert updated_count == 50
+
+            # Verify updates
+            updated_result = await session.execute(
+                select(SearchResult).where(SearchResult.id == results[0].id)
+            )
+            first_result = updated_result.scalar_one()
+            assert first_result.sentiment_score == 0.5
+
+            # 3. Test streaming queries
+            print("\n  Testing streaming queries:")
+            total_streamed = 0
+            chunk_count = 0
+            async for chunk in DatabaseOperations.stream_search_results(
+                session, search.id, chunk_size=100
+            ):
+                total_streamed += len(chunk)
+                chunk_count += 1
+                print(f"    Received chunk {chunk_count} with {len(chunk)} items")
+
+            print(f"    [+] Streamed {total_streamed} total results in {chunk_count} chunks")
+            assert total_streamed == 1000
+            assert chunk_count == 10
+
+            # 4. Test pagination
+            print("\n  Testing pagination:")
+            page_result = await DatabaseOperations.get_paginated_searches(
+                session, page=1, per_page=10
+            )
+
+            print(f"    [+] Page 1/{page_result.total_pages}")
+            print(f"    Items: {len(page_result.items)}")
+            print(f"    Total: {page_result.total}")
+            print(f"    Has next: {page_result.has_next}")
+            print(f"    Has prev: {page_result.has_prev}")
+
+            assert page_result.page == 1
+            assert page_result.per_page == 10
+            assert not page_result.has_prev  # First page
+            assert len(page_result.items) <= 10
+
+            # Test page navigation
+            if page_result.has_next:
+                page2 = await DatabaseOperations.get_paginated_searches(
+                    session, page=2, per_page=10
+                )
+                print(f"    [+] Page 2 retrieved with {len(page2.items)} items")
+                assert page2.has_prev  # Should have previous page
+                assert page2.page == 2
+
+            # 5. Test performance utilities
+            print("\n  Testing performance utilities:")
+
+            # Test count with filters
+            count = await DatabaseOperations.count_with_filters(
+                session, SearchResult, {"search_id": search.id}
+            )
+            print(f"    [+] Count with filters: {count} results")
+            assert count == 1000
+
+            # Test table statistics
+            stats = await DatabaseOperations.get_table_statistics(
+                session, SearchResult
+            )
+            print(f"    [+] Table statistics:")
+            print(f"       Total records: {stats['total_records']}")
+            print(f"       Created today: {stats['created_today']}")
+            assert stats['total_records'] >= 1000
+
+            # 6. Test batch task updates
+            print("\n  Testing batch task updates:")
+            # Create some tasks
+            task_ids = []
+            for i in range(5):
+                task = await DatabaseOperations.enqueue_task(
+                    session, f"test_task_{i}", {"data": f"test_{i}"}, priority=i
+                )
+                task_ids.append(task.id)
+
+            # Batch update their status
+            updated = await DatabaseOperations.batch_update_task_status(
+                session, task_ids, "processing"
+            )
+            print(f"    [+] Batch updated {updated} tasks to processing")
+            assert updated == 5
+
+            # 7. Test chunked reviews insert
+            print("\n  Testing chunked reviews insert:")
+            # Create a test product first
+            product = await DatabaseOperations.create_or_update_product(
+                session,
+                {
+                    'product_name': 'Bulk Test Product',
+                    'brand_name': 'Test Brand',
+                    'company_name': 'Test Company',
+                    'category': 'Test Category',
+                    'sku': 'BULK-TEST-001'
+                }
+            )
+
+            # Create large review dataset
+            reviews = [
+                {
+                    "review_title": f"Review {i}",
+                    "review_text": f"This is review text {i}",
+                    "rating": 3.0 + (i % 3),  # Ratings between 3-5
+                    "reviewer_name": f"Reviewer {i}",
+                    "review_date": datetime.utcnow(),
+                    "verified_purchase": i % 2 == 0  # Every other is verified
+                }
+                for i in range(500)
+            ]
+
+            reviews_inserted = await DatabaseOperations.bulk_add_reviews_chunked(
+                session, product.id, reviews, chunk_size=50
+            )
+            print(f"    [+] Inserted {reviews_inserted} reviews in chunks")
+            assert reviews_inserted == 500
+
+            # Test paginated reviews
+            review_page = await DatabaseOperations.get_paginated_reviews(
+                session, product.id, page=1, per_page=20, min_rating=4.0
+            )
+            print(f"    [+] Paginated reviews: {len(review_page.items)} items (filtered by rating >= 4.0)")
+
+            # 8. Test streaming reviews
+            print("\n  Testing streaming reviews:")
+            review_chunks = 0
+            review_total = 0
+            async for chunk in DatabaseOperations.stream_reviews(
+                session, product.id, chunk_size=50
+            ):
+                review_chunks += 1
+                review_total += len(chunk)
+
+            print(f"    [+] Streamed {review_total} reviews in {review_chunks} chunks")
+            assert review_total == 500
+
+            await session.commit()
+            print("\n  [+] All bulk operations tested successfully")
+            return True
+
+        except Exception as e:
+            print(f"\n  [-] Bulk operations test failed: {e}")
+            import traceback
+            traceback.print_exc()
+            await session.rollback()
+            return False
+
+
 async def init_complete_database():
     """Initialize complete database with all models and FTS5"""
     print("=" * 60)
@@ -288,6 +492,10 @@ async def init_complete_database():
         if test_success:
             test_success = await test_new_operations()
 
+        # Test bulk operations
+        if test_success:
+            test_success = await test_bulk_operations()
+
         if test_success:
             print("\n" + "=" * 60)
             print("[SUCCESS] DATABASE INITIALIZATION COMPLETE!")
@@ -305,6 +513,12 @@ async def init_complete_database():
             print("  - Task Queue operations: [+]")
             print("  - Cache operations: [+]")
             print("  - Rate Limiting operations: [+]")
+            print("  - Bulk operations: [+]")
+            print("  - Chunked inserts: [+]")
+            print("  - Batch updates: [+]")
+            print("  - Streaming queries: [+]")
+            print("  - Pagination: [+]")
+            print("  - Performance utilities: [+]")
 
             print("\n>> Your CIAP database is ready for use!")
             print("  - Location: data/ciap.db")

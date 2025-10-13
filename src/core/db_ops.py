@@ -3,12 +3,14 @@ Database Operations for CIAP
 Provides CRUD operations and business logic for all models
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, AsyncGenerator, Callable, Type, TypeVar, Generic
 from sqlalchemy import select, update, delete, and_, or_, func, desc, Integer
 from sqlalchemy.ext.asyncio import AsyncSession
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 import json
 import logging
+import asyncio
 from .models import (
     Search, SearchResult, Analysis, Product, PriceData, Offer,
     ProductReview, Competitor, MarketTrend, SERPData, SocialSentiment,
@@ -18,6 +20,20 @@ from .models import (
 from .database import db_manager
 
 logger = logging.getLogger(__name__)
+
+# Type definitions for pagination
+T = TypeVar('T')
+
+@dataclass
+class PaginatedResult(Generic[T]):
+    """Pagination result wrapper with metadata"""
+    items: List[T]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
+    has_prev: bool
+    has_next: bool
 
 
 class DatabaseOperations:
@@ -113,6 +129,67 @@ class DatabaseOperations:
         await session.flush()
         logger.info(f"Bulk inserted {len(result_objects)} search results for search {search_id}")
         return result_objects
+
+    @staticmethod
+    async def bulk_insert_results_chunked(
+        session: AsyncSession,
+        search_id: int,
+        results: List[Dict[str, Any]],
+        chunk_size: int = 100,
+        progress_callback: Optional[Callable] = None
+    ) -> List[SearchResult]:
+        """
+        Bulk insert search results with chunk processing for large datasets.
+
+        Args:
+            session: Database session
+            search_id: ID of the parent search
+            results: List of result dictionaries to insert
+            chunk_size: Number of records to process at once
+            progress_callback: Optional async callback for progress updates
+                              Called with (current_chunk, total_chunks, total_processed)
+
+        Returns:
+            List of inserted SearchResult objects
+        """
+        if not results:
+            return []
+
+        inserted_results = []
+        total_chunks = (len(results) + chunk_size - 1) // chunk_size
+
+        for chunk_idx in range(0, len(results), chunk_size):
+            chunk = results[chunk_idx:chunk_idx + chunk_size]
+            chunk_objects = []
+
+            for result in chunk:
+                search_result = SearchResult(
+                    search_id=search_id,
+                    title=result.get('title', 'Untitled'),
+                    url=result.get('url'),
+                    snippet=result.get('snippet'),
+                    source=result.get('source', 'unknown'),
+                    position=result.get('rank', result.get('position'))
+                )
+                chunk_objects.append(search_result)
+
+            session.add_all(chunk_objects)
+            await session.flush()
+            inserted_results.extend(chunk_objects)
+
+            # Call progress callback if provided
+            if progress_callback:
+                current_chunk = (chunk_idx // chunk_size) + 1
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback(current_chunk, total_chunks, len(inserted_results))
+                else:
+                    progress_callback(current_chunk, total_chunks, len(inserted_results))
+
+            # Allow other tasks to run between chunks
+            await asyncio.sleep(0)
+
+        logger.info(f"Bulk inserted {len(inserted_results)} search results in {total_chunks} chunks")
+        return inserted_results
 
     @staticmethod
     async def get_search_results(
@@ -335,6 +412,49 @@ class DatabaseOperations:
         session.add_all(review_objects)
         await session.flush()
         logger.info(f"Added {len(reviews)} reviews for product {product_id}")
+
+    @staticmethod
+    async def bulk_add_reviews_chunked(
+        session: AsyncSession,
+        product_id: int,
+        reviews: List[Dict[str, Any]],
+        chunk_size: int = 100,
+        progress_callback: Optional[Callable] = None
+    ) -> int:
+        """
+        Bulk add product reviews with chunk processing for large datasets.
+
+        Returns:
+            Total number of reviews inserted
+        """
+        if not reviews:
+            return 0
+
+        total_inserted = 0
+        total_chunks = (len(reviews) + chunk_size - 1) // chunk_size
+
+        for chunk_idx in range(0, len(reviews), chunk_size):
+            chunk = reviews[chunk_idx:chunk_idx + chunk_size]
+            review_objects = [
+                ProductReview(product_id=product_id, **review)
+                for review in chunk
+            ]
+
+            session.add_all(review_objects)
+            await session.flush()
+            total_inserted += len(review_objects)
+
+            if progress_callback:
+                current_chunk = (chunk_idx // chunk_size) + 1
+                if asyncio.iscoroutinefunction(progress_callback):
+                    await progress_callback(current_chunk, total_chunks, total_inserted)
+                else:
+                    progress_callback(current_chunk, total_chunks, total_inserted)
+
+            await asyncio.sleep(0)
+
+        logger.info(f"Added {total_inserted} reviews for product {product_id} in {total_chunks} chunks")
+        return total_inserted
 
     @staticmethod
     async def get_product_reviews(
@@ -861,6 +981,643 @@ class DatabaseOperations:
         return stats
 
     # =========================
+    # BATCH UPDATE OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def batch_update_search_status(
+        session: AsyncSession,
+        updates: List[Dict[str, Any]]  # [{"id": 1, "status": "completed"}, ...]
+    ) -> int:
+        """
+        Batch update multiple search statuses efficiently.
+
+        Args:
+            session: Database session
+            updates: List of dicts with 'id', 'status', and optional 'error' keys
+
+        Returns:
+            Number of records updated
+        """
+        if not updates:
+            return 0
+
+        updated_count = 0
+        for item in updates:
+            stmt = update(Search).where(Search.id == item["id"]).values(
+                status=item.get("status"),
+                error_message=item.get("error"),
+                updated_at=datetime.utcnow(),
+                completed_at=datetime.utcnow() if item.get("status") in ["completed", "failed"] else None
+            )
+            result = await session.execute(stmt)
+            updated_count += result.rowcount
+
+        await session.flush()
+        logger.info(f"Batch updated {updated_count} search statuses")
+        return updated_count
+
+    @staticmethod
+    async def batch_update_search_results(
+        session: AsyncSession,
+        updates: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Batch update multiple search results efficiently.
+
+        Args:
+            session: Database session
+            updates: List of dicts with 'id' and fields to update
+
+        Returns:
+            Number of records updated
+        """
+        if not updates:
+            return 0
+
+        updated_count = 0
+        for item in updates:
+            result_id = item.pop("id")
+            if not result_id:
+                continue
+
+            stmt = update(SearchResult).where(SearchResult.id == result_id).values(**item)
+            result = await session.execute(stmt)
+            updated_count += result.rowcount
+
+        await session.flush()
+        logger.info(f"Batch updated {updated_count} search results")
+        return updated_count
+
+    @staticmethod
+    async def batch_update_task_status(
+        session: AsyncSession,
+        task_ids: List[int],
+        status: str,
+        error_message: Optional[str] = None
+    ) -> int:
+        """
+        Batch update task statuses for multiple tasks.
+
+        Args:
+            session: Database session
+            task_ids: List of task IDs to update
+            status: New status for all tasks
+            error_message: Optional error message
+
+        Returns:
+            Number of tasks updated
+        """
+        if not task_ids:
+            return 0
+
+        update_values = {
+            "status": status,
+            "error_message": error_message
+        }
+
+        if status == "completed" or status == "failed":
+            update_values["completed_at"] = datetime.utcnow()
+        elif status == "processing":
+            update_values["started_at"] = datetime.utcnow()
+
+        stmt = update(TaskQueue).where(TaskQueue.id.in_(task_ids)).values(**update_values)
+        result = await session.execute(stmt)
+
+        await session.flush()
+        logger.info(f"Batch updated {result.rowcount} tasks to status: {status}")
+        return result.rowcount
+
+    @staticmethod
+    async def batch_update_product_prices(
+        session: AsyncSession,
+        price_updates: List[Dict[str, Any]]
+    ) -> int:
+        """
+        Batch update product prices and add to price history.
+
+        Args:
+            session: Database session
+            price_updates: List of dicts with 'product_id', 'current_price', etc.
+
+        Returns:
+            Number of price records created
+        """
+        if not price_updates:
+            return 0
+
+        price_objects = []
+        history_objects = []
+
+        for update in price_updates:
+            # Create new price data entry
+            price_data = PriceData(
+                product_id=update["product_id"],
+                current_price=update["current_price"],
+                original_price=update.get("original_price"),
+                currency=update.get("currency", "USD"),
+                discount_percentage=update.get("discount_percentage"),
+                availability_status=update.get("availability_status", "In Stock"),
+                seller_name=update.get("seller_name", "Unknown"),
+                shipping_cost=update.get("shipping_cost")
+            )
+            price_objects.append(price_data)
+
+            # Also add to price history
+            history = PriceHistory(
+                product_id=update["product_id"],
+                price=update["current_price"],
+                currency=update.get("currency", "USD"),
+                seller_name=update.get("seller_name", "Unknown")
+            )
+            history_objects.append(history)
+
+        session.add_all(price_objects)
+        session.add_all(history_objects)
+        await session.flush()
+
+        logger.info(f"Batch updated {len(price_objects)} product prices")
+        return len(price_objects)
+
+    # =========================
+    # STREAMING OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def stream_search_results(
+        session: AsyncSession,
+        search_id: int,
+        chunk_size: int = 100
+    ) -> AsyncGenerator[List[SearchResult], None]:
+        """
+        Stream search results in chunks to handle large datasets efficiently.
+
+        Args:
+            session: Database session
+            search_id: ID of the search
+            chunk_size: Number of records per chunk
+
+        Yields:
+            List of SearchResult objects in chunks
+        """
+        offset = 0
+
+        while True:
+            query = (
+                select(SearchResult)
+                .where(SearchResult.search_id == search_id)
+                .order_by(SearchResult.position.nullslast(), SearchResult.scraped_at)
+                .limit(chunk_size)
+                .offset(offset)
+            )
+
+            result = await session.execute(query)
+            chunk = result.scalars().all()
+
+            if not chunk:
+                break
+
+            yield chunk
+            offset += chunk_size
+
+            # Allow other tasks to run
+            await asyncio.sleep(0)
+
+    @staticmethod
+    async def stream_products(
+        session: AsyncSession,
+        category: Optional[str] = None,
+        chunk_size: int = 50
+    ) -> AsyncGenerator[List[Product], None]:
+        """
+        Stream products by category in chunks.
+
+        Args:
+            session: Database session
+            category: Optional category filter
+            chunk_size: Number of records per chunk
+
+        Yields:
+            List of Product objects in chunks
+        """
+        offset = 0
+
+        while True:
+            query = select(Product)
+
+            if category:
+                query = query.where(Product.category == category)
+
+            query = query.order_by(Product.id).limit(chunk_size).offset(offset)
+            result = await session.execute(query)
+            chunk = result.scalars().all()
+
+            if not chunk:
+                break
+
+            yield chunk
+            offset += chunk_size
+            await asyncio.sleep(0)
+
+    @staticmethod
+    async def stream_reviews(
+        session: AsyncSession,
+        product_id: int,
+        min_rating: Optional[float] = None,
+        chunk_size: int = 100
+    ) -> AsyncGenerator[List[ProductReview], None]:
+        """
+        Stream product reviews in chunks.
+
+        Args:
+            session: Database session
+            product_id: ID of the product
+            min_rating: Optional minimum rating filter
+            chunk_size: Number of records per chunk
+
+        Yields:
+            List of ProductReview objects in chunks
+        """
+        offset = 0
+
+        while True:
+            query = select(ProductReview).where(ProductReview.product_id == product_id)
+
+            if min_rating:
+                query = query.where(ProductReview.rating >= min_rating)
+
+            query = query.order_by(desc(ProductReview.review_date)).limit(chunk_size).offset(offset)
+            result = await session.execute(query)
+            chunk = result.scalars().all()
+
+            if not chunk:
+                break
+
+            yield chunk
+            offset += chunk_size
+            await asyncio.sleep(0)
+
+    @staticmethod
+    async def stream_task_queue(
+        session: AsyncSession,
+        status: str = "pending",
+        chunk_size: int = 50
+    ) -> AsyncGenerator[List[TaskQueue], None]:
+        """
+        Stream tasks from queue in priority order.
+
+        Args:
+            session: Database session
+            status: Task status filter
+            chunk_size: Number of records per chunk
+
+        Yields:
+            List of TaskQueue objects in chunks
+        """
+        offset = 0
+
+        while True:
+            query = (
+                select(TaskQueue)
+                .where(TaskQueue.status == status)
+                .order_by(TaskQueue.priority, TaskQueue.scheduled_at)
+                .limit(chunk_size)
+                .offset(offset)
+            )
+
+            result = await session.execute(query)
+            chunk = result.scalars().all()
+
+            if not chunk:
+                break
+
+            yield chunk
+            offset += chunk_size
+            await asyncio.sleep(0)
+
+    # =========================
+    # PAGINATION OPERATIONS
+    # =========================
+
+    @staticmethod
+    async def get_paginated_searches(
+        session: AsyncSession,
+        page: int = 1,
+        per_page: int = 20,
+        status: Optional[str] = None,
+        user_id: Optional[str] = None,
+        search_type: Optional[str] = None
+    ) -> PaginatedResult[Search]:
+        """
+        Get paginated search results with metadata.
+
+        Args:
+            session: Database session
+            page: Page number (1-indexed)
+            per_page: Items per page
+            status: Optional status filter
+            user_id: Optional user ID filter
+            search_type: Optional search type filter
+
+        Returns:
+            PaginatedResult containing items and pagination metadata
+        """
+        # Build count query
+        count_query = select(func.count(Search.id))
+        if status:
+            count_query = count_query.where(Search.status == status)
+        if user_id:
+            count_query = count_query.where(Search.user_id == user_id)
+        if search_type:
+            count_query = count_query.where(Search.search_type == search_type)
+
+        # Get total count
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Calculate pagination metadata
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        offset = (page - 1) * per_page
+
+        # Build data query
+        query = select(Search)
+        if status:
+            query = query.where(Search.status == status)
+        if user_id:
+            query = query.where(Search.user_id == user_id)
+        if search_type:
+            query = query.where(Search.search_type == search_type)
+
+        query = query.order_by(desc(Search.created_at)).limit(per_page).offset(offset)
+
+        # Get items
+        result = await session.execute(query)
+        items = result.scalars().all()
+
+        return PaginatedResult(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_prev=page > 1,
+            has_next=page < total_pages
+        )
+
+    @staticmethod
+    async def get_paginated_products(
+        session: AsyncSession,
+        page: int = 1,
+        per_page: int = 20,
+        category: Optional[str] = None,
+        brand: Optional[str] = None,
+        search_term: Optional[str] = None
+    ) -> PaginatedResult[Product]:
+        """
+        Get paginated product results with metadata.
+
+        Args:
+            session: Database session
+            page: Page number (1-indexed)
+            per_page: Items per page
+            category: Optional category filter
+            brand: Optional brand filter
+            search_term: Optional search term
+
+        Returns:
+            PaginatedResult containing products and pagination metadata
+        """
+        # Build count query
+        count_query = select(func.count(Product.id))
+
+        if category:
+            count_query = count_query.where(Product.category == category)
+        if brand:
+            count_query = count_query.where(Product.brand_name == brand)
+        if search_term:
+            count_query = count_query.where(
+                or_(
+                    Product.product_name.ilike(f"%{search_term}%"),
+                    Product.description.ilike(f"%{search_term}%")
+                )
+            )
+
+        # Get total count
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Calculate pagination
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        offset = (page - 1) * per_page
+
+        # Build data query
+        query = select(Product)
+        if category:
+            query = query.where(Product.category == category)
+        if brand:
+            query = query.where(Product.brand_name == brand)
+        if search_term:
+            query = query.where(
+                or_(
+                    Product.product_name.ilike(f"%{search_term}%"),
+                    Product.description.ilike(f"%{search_term}%")
+                )
+            )
+
+        query = query.order_by(Product.product_name).limit(per_page).offset(offset)
+
+        # Get items
+        result = await session.execute(query)
+        items = result.scalars().all()
+
+        return PaginatedResult(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_prev=page > 1,
+            has_next=page < total_pages
+        )
+
+    @staticmethod
+    async def get_paginated_reviews(
+        session: AsyncSession,
+        product_id: int,
+        page: int = 1,
+        per_page: int = 20,
+        min_rating: Optional[float] = None,
+        verified_only: bool = False
+    ) -> PaginatedResult[ProductReview]:
+        """
+        Get paginated review results with metadata.
+
+        Args:
+            session: Database session
+            product_id: Product ID filter
+            page: Page number (1-indexed)
+            per_page: Items per page
+            min_rating: Optional minimum rating filter
+            verified_only: Only show verified purchases
+
+        Returns:
+            PaginatedResult containing reviews and pagination metadata
+        """
+        # Build count query
+        count_query = select(func.count(ProductReview.id)).where(
+            ProductReview.product_id == product_id
+        )
+
+        if min_rating:
+            count_query = count_query.where(ProductReview.rating >= min_rating)
+        if verified_only:
+            count_query = count_query.where(ProductReview.verified_purchase == True)
+
+        # Get total count
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Calculate pagination
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        offset = (page - 1) * per_page
+
+        # Build data query
+        query = select(ProductReview).where(ProductReview.product_id == product_id)
+        if min_rating:
+            query = query.where(ProductReview.rating >= min_rating)
+        if verified_only:
+            query = query.where(ProductReview.verified_purchase == True)
+
+        query = query.order_by(desc(ProductReview.review_date)).limit(per_page).offset(offset)
+
+        # Get items
+        result = await session.execute(query)
+        items = result.scalars().all()
+
+        return PaginatedResult(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_prev=page > 1,
+            has_next=page < total_pages
+        )
+
+    @staticmethod
+    async def get_paginated_competitors(
+        session: AsyncSession,
+        page: int = 1,
+        per_page: int = 20,
+        market_share_min: Optional[float] = None
+    ) -> PaginatedResult[Competitor]:
+        """
+        Get paginated competitor results with metadata.
+
+        Args:
+            session: Database session
+            page: Page number (1-indexed)
+            per_page: Items per page
+            market_share_min: Optional minimum market share filter
+
+        Returns:
+            PaginatedResult containing competitors and pagination metadata
+        """
+        # Build count query
+        count_query = select(func.count(Competitor.id))
+        if market_share_min:
+            count_query = count_query.where(Competitor.market_share >= market_share_min)
+
+        # Get total count
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Calculate pagination
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        offset = (page - 1) * per_page
+
+        # Build data query
+        query = select(Competitor)
+        if market_share_min:
+            query = query.where(Competitor.market_share >= market_share_min)
+
+        query = query.order_by(desc(Competitor.market_share.nullslast()),
+                               Competitor.company_name).limit(per_page).offset(offset)
+
+        # Get items
+        result = await session.execute(query)
+        items = result.scalars().all()
+
+        return PaginatedResult(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_prev=page > 1,
+            has_next=page < total_pages
+        )
+
+    @staticmethod
+    async def get_paginated_task_queue(
+        session: AsyncSession,
+        page: int = 1,
+        per_page: int = 20,
+        status: Optional[str] = None,
+        task_type: Optional[str] = None
+    ) -> PaginatedResult[TaskQueue]:
+        """
+        Get paginated task queue with metadata.
+
+        Args:
+            session: Database session
+            page: Page number (1-indexed)
+            per_page: Items per page
+            status: Optional status filter
+            task_type: Optional task type filter
+
+        Returns:
+            PaginatedResult containing tasks and pagination metadata
+        """
+        # Build count query
+        count_query = select(func.count(TaskQueue.id))
+        if status:
+            count_query = count_query.where(TaskQueue.status == status)
+        if task_type:
+            count_query = count_query.where(TaskQueue.task_type == task_type)
+
+        # Get total count
+        total_result = await session.execute(count_query)
+        total = total_result.scalar() or 0
+
+        # Calculate pagination
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+        offset = (page - 1) * per_page
+
+        # Build data query
+        query = select(TaskQueue)
+        if status:
+            query = query.where(TaskQueue.status == status)
+        if task_type:
+            query = query.where(TaskQueue.task_type == task_type)
+
+        query = query.order_by(TaskQueue.priority, TaskQueue.scheduled_at).limit(per_page).offset(offset)
+
+        # Get items
+        result = await session.execute(query)
+        items = result.scalars().all()
+
+        return PaginatedResult(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_prev=page > 1,
+            has_next=page < total_pages
+        )
+
+    # =========================
     # COMPETITOR-PRODUCT RELATIONSHIP OPERATIONS
     # =========================
 
@@ -1125,3 +1882,238 @@ class DatabaseOperations:
 
         logger.info(f"FTS search for '{search_query}' returned {len(news_items)} news items")
         return news_items
+
+    # =========================
+    # PERFORMANCE UTILITY FUNCTIONS
+    # =========================
+
+    @staticmethod
+    async def execute_in_chunks(
+        session: AsyncSession,
+        items: List[Any],
+        operation: Callable,
+        chunk_size: int = 100
+    ) -> List[Any]:
+        """
+        Execute any operation in chunks for better performance.
+
+        Args:
+            session: Database session
+            items: List of items to process
+            operation: Async callable to execute on each chunk
+            chunk_size: Size of each chunk
+
+        Returns:
+            Combined results from all chunks
+        """
+        if not items:
+            return []
+
+        results = []
+        total_chunks = (len(items) + chunk_size - 1) // chunk_size
+
+        for i in range(0, len(items), chunk_size):
+            chunk = items[i:i + chunk_size]
+
+            # Execute operation on chunk
+            if asyncio.iscoroutinefunction(operation):
+                chunk_results = await operation(session, chunk)
+            else:
+                chunk_results = operation(session, chunk)
+
+            if chunk_results:
+                if isinstance(chunk_results, list):
+                    results.extend(chunk_results)
+                else:
+                    results.append(chunk_results)
+
+            # Allow other operations between chunks
+            await asyncio.sleep(0)
+
+        logger.info(f"Executed operation on {len(items)} items in {total_chunks} chunks")
+        return results
+
+    @staticmethod
+    async def count_with_filters(
+        session: AsyncSession,
+        model: Type,
+        filters: Dict[str, Any]
+    ) -> int:
+        """
+        Generic count operation with dynamic filters.
+
+        Args:
+            session: Database session
+            model: SQLAlchemy model class
+            filters: Dictionary of field:value filters
+
+        Returns:
+            Count of matching records
+        """
+        query = select(func.count()).select_from(model)
+
+        for key, value in filters.items():
+            if hasattr(model, key):
+                if value is None:
+                    query = query.where(getattr(model, key).is_(None))
+                elif isinstance(value, list):
+                    query = query.where(getattr(model, key).in_(value))
+                elif isinstance(value, str) and '%' in value:
+                    query = query.where(getattr(model, key).ilike(value))
+                else:
+                    query = query.where(getattr(model, key) == value)
+
+        result = await session.execute(query)
+        count = result.scalar() or 0
+        logger.debug(f"Count for {model.__tablename__} with filters {filters}: {count}")
+        return count
+
+    @staticmethod
+    async def bulk_delete_with_filters(
+        session: AsyncSession,
+        model: Type,
+        filters: Dict[str, Any],
+        chunk_size: int = 100
+    ) -> int:
+        """
+        Bulk delete records matching filters in chunks.
+
+        Args:
+            session: Database session
+            model: SQLAlchemy model class
+            filters: Dictionary of field:value filters
+            chunk_size: Number of records to delete at once
+
+        Returns:
+            Total number of records deleted
+        """
+        # First, get IDs of records to delete
+        query = select(model.id)
+
+        for key, value in filters.items():
+            if hasattr(model, key):
+                query = query.where(getattr(model, key) == value)
+
+        result = await session.execute(query)
+        ids_to_delete = [row[0] for row in result]
+
+        if not ids_to_delete:
+            return 0
+
+        total_deleted = 0
+
+        # Delete in chunks
+        for i in range(0, len(ids_to_delete), chunk_size):
+            chunk_ids = ids_to_delete[i:i + chunk_size]
+            stmt = delete(model).where(model.id.in_(chunk_ids))
+            result = await session.execute(stmt)
+            total_deleted += result.rowcount
+            await session.flush()
+            await asyncio.sleep(0)
+
+        logger.info(f"Bulk deleted {total_deleted} records from {model.__tablename__}")
+        return total_deleted
+
+    @staticmethod
+    async def optimize_query_with_joins(
+        session: AsyncSession,
+        base_model: Type,
+        join_models: List[Type],
+        filters: Optional[Dict[str, Any]] = None,
+        limit: Optional[int] = None
+    ) -> List:
+        """
+        Optimize queries with eager loading of relationships.
+
+        Args:
+            session: Database session
+            base_model: Primary model to query
+            join_models: List of related models to join
+            filters: Optional filters
+            limit: Optional result limit
+
+        Returns:
+            Query results with relationships loaded
+        """
+        from sqlalchemy.orm import selectinload
+
+        query = select(base_model)
+
+        # Add joins for eager loading
+        for join_model in join_models:
+            # Assume relationship names match lowercase model names
+            relationship_name = join_model.__tablename__
+            if hasattr(base_model, relationship_name):
+                query = query.options(selectinload(getattr(base_model, relationship_name)))
+
+        # Apply filters
+        if filters:
+            for key, value in filters.items():
+                if hasattr(base_model, key):
+                    query = query.where(getattr(base_model, key) == value)
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await session.execute(query)
+        return result.scalars().all()
+
+    @staticmethod
+    async def get_table_statistics(
+        session: AsyncSession,
+        model: Type
+    ) -> Dict[str, Any]:
+        """
+        Get detailed statistics for a database table.
+
+        Args:
+            session: Database session
+            model: SQLAlchemy model class
+
+        Returns:
+            Dictionary with table statistics
+        """
+        stats = {
+            "table_name": model.__tablename__,
+            "total_records": 0,
+            "created_today": 0,
+            "created_this_week": 0,
+            "created_this_month": 0
+        }
+
+        # Total count
+        total_result = await session.execute(
+            select(func.count()).select_from(model)
+        )
+        stats["total_records"] = total_result.scalar() or 0
+
+        # Date-based counts if model has created_at
+        if hasattr(model, 'created_at'):
+            now = datetime.utcnow()
+            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            week_ago = now - timedelta(days=7)
+            month_ago = now - timedelta(days=30)
+
+            # Today's records
+            today_result = await session.execute(
+                select(func.count()).select_from(model)
+                .where(model.created_at >= today)
+            )
+            stats["created_today"] = today_result.scalar() or 0
+
+            # This week's records
+            week_result = await session.execute(
+                select(func.count()).select_from(model)
+                .where(model.created_at >= week_ago)
+            )
+            stats["created_this_week"] = week_result.scalar() or 0
+
+            # This month's records
+            month_result = await session.execute(
+                select(func.count()).select_from(model)
+                .where(model.created_at >= month_ago)
+            )
+            stats["created_this_month"] = month_result.scalar() or 0
+
+        logger.debug(f"Statistics for {model.__tablename__}: {stats}")
+        return stats
