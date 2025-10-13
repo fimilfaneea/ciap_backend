@@ -15,39 +15,44 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 📍 Current Implementation Status
 
 ### Completed Components
-- ✅ **Database Models** (src/core/models.py - 435 lines):
-  - All 23 models fully defined: Search, Product, Competitor, PriceData, Offer, ProductReview, MarketTrend, SERPData, SocialSentiment, NewsContent, FeatureComparison, Insights, etc.
+- ✅ **Database Models** (src/core/models.py - 434 lines):
+  - All 23 models fully defined: Search, SearchResult, Analysis, Product, Competitor, PriceData, Offer, ProductReview, MarketTrend, SERPData, SocialSentiment, NewsContent, FeatureComparison, Insights, Cache, TaskQueue, ScrapingJob, RateLimit, PriceHistory, CompetitorTracking, CompetitorProducts
   - SQLite with async support via aiosqlite
   - Comprehensive relationships, foreign keys, and cascades
 
-- ✅ **Database Manager** (src/core/database.py - 346 lines):
-  - Async database operations with connection pooling
+- ✅ **Database Manager** (src/core/database.py - 355 lines):
+  - Async database operations with NullPool (SQLite doesn't support pooling)
   - WAL mode enabled for concurrent access
-  - SQLite optimizations (cache_size=10000, temp_store=MEMORY)
-  - Health check, stats, and graceful shutdown
+  - SQLite optimizations (cache_size=64MB, temp_store=MEMORY, page_size=4096)
+  - Automatic table and index creation on initialization
+  - 40+ indexes created automatically for performance
+  - Health check, stats, optimize, and graceful shutdown
+  - Can run standalone: `python src/core/database.py`
 
-- ✅ **FTS5 Setup** (src/core/fts_setup.py - 338 lines):
-  - Full-text search configuration for all content models
+- ✅ **FTS5 Setup** (src/core/fts_setup.py - 324 lines):
+  - Full-text search configuration for content models
   - Virtual tables for optimized text searching
+  - Automatically configured during database initialization
 
-- ✅ **Database Operations** (src/core/db_ops.py - 1817 lines):
+- ✅ **Database Operations** (src/core/db_ops.py - 2118 lines):
   - Complete CRUD operations for all 23 models
-  - Bulk operations with chunk processing
+  - Bulk operations with chunk processing (100-row chunks)
   - Cache management with TTL support
-  - Task queue operations (enqueue, dequeue, retry)
+  - Task queue operations (enqueue, dequeue, retry, priority)
   - Price history and competitor tracking
+  - Search and analysis workflow support
+  - Comprehensive error handling and logging
 
-- ✅ **Database Initialization** (scripts/init_database.py - 732 lines):
-  - Automated database setup and table creation
-  - Index creation for performance
-  - Schema verification and integrity checks
-  - Sample data insertion for testing
-
-- ✅ **Comprehensive Tests** (tests/test_database.py - 732 lines):
-  - Unit tests for all database operations
-  - Integration tests for complex workflows
-  - Performance benchmarks included
-  - Custom test runner (no pytest dependency)
+- ✅ **Comprehensive Test Suite** (7 modules, ~5,900 lines total):
+  - `test_database.py` (822 lines) - Core database operations and initialization
+  - `test_integration.py` (1205 lines) - End-to-end workflows and complex scenarios
+  - `test_models.py` (1019 lines) - Model validation, relationships, and constraints
+  - `test_performance.py` (798 lines) - Performance benchmarks and optimization tests
+  - `test_concurrency.py` (815 lines) - Concurrent access and WAL mode testing
+  - `test_transactions.py` (694 lines) - Transaction handling and rollback tests
+  - `test_utils.py` (525 lines) - Utility functions and helpers
+  - Custom test runner (no pytest dependency required)
+  - Run with: `python tests/test_*.py`
 
 ### Next Priority Components
 - 🔴 **Main FastAPI application** (main.py) - Core API server
@@ -75,16 +80,16 @@ ollama pull llama3.1:8b
 ### Database Operations
 ```bash
 # Initialize database with all tables and indexes
-python scripts/init_database.py
+python src/core/database.py
 
-# Check database status without initialization
-python scripts/init_database.py --check-only
+# Test database operations (run any or all test modules)
+python tests/test_database.py        # Core operations
+python tests/test_integration.py     # Integration workflows
+python tests/test_performance.py     # Performance benchmarks
+python tests/test_concurrency.py     # Concurrent access
 
-# Test database operations
-python tests/test_database.py
-
-# Quick database connection test
-python -c "from src.core.database import DatabaseManager; import asyncio; db=DatabaseManager(); asyncio.run(db.initialize()); print('Database connected successfully')"
+# Quick database connection test and stats
+python -c "from src.core.database import DatabaseManager; import asyncio; db=DatabaseManager(); asyncio.run(db.initialize()); asyncio.run(db.health_check()); stats=asyncio.run(db.get_stats()); print('Database healthy, tables:', len([k for k in stats.keys() if k.endswith('_count')]))"
 ```
 
 ### Running the Application
@@ -97,15 +102,21 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 ### Testing
 ```bash
-# Run database tests (custom test runner - no pytest needed)
-python tests/test_database.py
+# Run all test modules (custom test runner - no pytest needed)
+python tests/test_database.py        # Core database tests
+python tests/test_models.py          # Model validation tests
+python tests/test_integration.py     # Integration tests
+python tests/test_performance.py     # Performance benchmarks
+python tests/test_concurrency.py     # Concurrency tests
+python tests/test_transactions.py    # Transaction tests
 
-# Run specific test groups
+# Run specific test class within a module
 python tests/test_database.py TestDatabaseInitialization
 python tests/test_database.py TestDatabaseOperations
 
 # For pytest users (if pytest is installed)
 pytest tests/ -v
+pytest tests/test_database.py -v
 pytest --cov=src --cov-report=html
 ```
 
@@ -115,20 +126,28 @@ pytest --cov=src --cov-report=html
 ```
 F:\Project\CIAP\
 ├── src/
+│   ├── __init__.py
 │   └── core/
-│       ├── models.py         # ✅ 23 database models
-│       ├── database.py       # ✅ Async database manager
-│       ├── db_ops.py         # ✅ CRUD operations
-│       └── fts_setup.py      # ✅ Full-text search
-├── scripts/
-│   └── init_database.py     # ✅ Database initialization
+│       ├── __init__.py
+│       ├── models.py         # ✅ 23 database models (434 lines)
+│       ├── database.py       # ✅ Async database manager (355 lines)
+│       ├── db_ops.py         # ✅ CRUD operations (2118 lines)
+│       └── fts_setup.py      # ✅ Full-text search (324 lines)
 ├── tests/
-│   └── test_database.py     # ✅ Test suite
-├── data/                     # SQLite database storage
+│   ├── test_database.py     # ✅ Core tests (822 lines)
+│   ├── test_models.py       # ✅ Model tests (1019 lines)
+│   ├── test_integration.py  # ✅ Integration tests (1205 lines)
+│   ├── test_performance.py  # ✅ Performance tests (798 lines)
+│   ├── test_concurrency.py  # ✅ Concurrency tests (815 lines)
+│   ├── test_transactions.py # ✅ Transaction tests (694 lines)
+│   └── test_utils.py        # ✅ Utilities (525 lines)
+├── data/
+│   └── ciap.db              # SQLite database file
 ├── venv/                     # Python virtual environment
 ├── requirements.txt          # Project dependencies
-├── .env                      # Environment variables
-└── ciap.db                   # SQLite database file
+├── .env                      # Environment variables (not in git)
+├── .env.example              # Environment template
+└── Mod_*.md                  # Module implementation guides
 ```
 
 ### SQLite-Only Design
@@ -268,12 +287,11 @@ async with db_manager.get_session() as session:
 ## 📚 Key Files Reference
 
 ### Core Database Layer (Completed)
-- `src/core/models.py`: All 23 database models defined
-- `src/core/database.py`: Async database manager with connection pooling
-- `src/core/db_ops.py`: Complete CRUD operations for all models
-- `src/core/fts_setup.py`: Full-text search configuration
-- `scripts/init_database.py`: Database initialization and setup
-- `tests/test_database.py`: Comprehensive test suite
+- `src/core/models.py`: All 23 database models with relationships and constraints
+- `src/core/database.py`: Async database manager with automatic table/index creation
+- `src/core/db_ops.py`: Complete CRUD operations for all models with bulk operations
+- `src/core/fts_setup.py`: Full-text search configuration (FTS5 virtual tables)
+- `tests/test_*.py`: 7 comprehensive test modules (~5,900 lines total)
 
 ### Module Implementation Guides
 - `Mod_01_Database.md`: Database infrastructure (COMPLETED)
@@ -317,20 +335,27 @@ Remember: The goal is a working system that SMEs can actually use, not a perfect
 ```bash
 # Check what's implemented
 ls -la src/core/
-python scripts/init_database.py --check-only
+wc -l src/core/*.py
 
-# Start implementing main.py
+# Initialize/verify database
+python src/core/database.py
+
+# Run comprehensive tests
+python tests/test_integration.py  # Best overall test
+python tests/test_database.py     # Core functionality
+
+# Start implementing main.py (next priority)
 # 1. Copy structure from Mod_08_API.md
 # 2. Use existing db_ops functions
 # 3. Test with: python main.py
 
-# Add a new scraper
+# Add a new scraper (future step)
 # 1. Create scrapers/ directory
 # 2. Follow pattern in Mod_05_Scraper.md
 # 3. Use db_ops.create_search_result()
 
 # Debug database issues
-python -c "from src.core.database import DatabaseManager; import asyncio; db=DatabaseManager(); asyncio.run(db.health_check())"
+python src/core/database.py  # Runs health check automatically
 ```
 
 ### Windows-Specific Commands

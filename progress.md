@@ -1,323 +1,764 @@
 https://markdownlivepreview.com/
-did till Step 4.2: Implement Bulk Operations    
 
-# 📋 Module 1: Database Infrastructure - Detailed Implementation Plan
-
-Based on your project requirements, here's an ultra-detailed step-by-step implementation plan for Module 1:
-
-## Phase 1: Environment Setup & Dependencies (30 minutes)
-
-### Step 1.1: Create Project Structure
-
-1. Create directory structure:
-   - `F:\Project\CIAP\data\` (for database file)
-   - `F:\Project\CIAP\src\core\` (for database module)
-   - `F:\Project\CIAP\tests\` (for unit tests)
-   - `F:\Project\CIAP\scripts\` (for setup scripts)
-
-2. Initialize Python environment:
-   - Create/activate virtual environment
-   - Create requirements.txt for database dependencies
-
-### Step 1.2: Install Required Packages
-
-```txt
-# Core database packages
-sqlalchemy==2.0.23
-aiosqlite==0.19.0
-alembic==1.12.1  # For future migrations
-
-# Testing packages
-pytest==7.4.3
-pytest-asyncio==0.21.1
-
-# Development tools
-python-dotenv==1.0.0  # For environment variables
-```
-
-## Phase 2: Database Models Implementation (2 hours)
-
-### Step 2.1: Create Base Model Configuration (src/core/models.py)
-
-1. Import necessary SQLAlchemy components
-2. Create declarative base
-3. Define common column mixins (id, timestamps)
-4. Implement all 6 core models:
-   - Search (main search queries)
-   - SearchResult (scraped results)
-   - Cache (TTL-based caching)
-   - TaskQueue (background jobs)
-   - ScrapingJob (scraper tracking)
-   - RateLimit (API rate limiting)
-
-### Step 2.2: Model Implementation Details
-
-For each model:
-1. Define table name
-2. Add primary key with autoincrement
-3. Add foreign keys where needed
-4. Add JSON columns for flexible data
-5. Add indexes for frequently queried fields
-6. Add default values and constraints
-7. Add created_at/updated_at timestamps
-
-## Phase 3: Database Connection Manager (2 hours)
-
-### Step 3.1: Create Database Manager (src/core/database.py)
-
-1. Implement DatabaseManager class:
-   - Async engine creation
-   - Session factory setup
-   - Connection pooling configuration
-   - Health check method
-   - Graceful shutdown handling
-
-2. Configure SQLite optimizations:
-   - Enable WAL mode
-   - Set cache size (10000 pages)
-   - Configure temp_store in memory
-   - Set synchronous mode to NORMAL
-
-### Step 3.2: Implement Connection Features
-
-1. Async context manager for sessions
-2. Automatic transaction handling
-3. Error handling and rollback
-4. Connection pool management
-5. Dependency injection for FastAPI
-
-## Phase 4: Database Operations Layer (3 hours)
-
-### Step 4.1: Create Operations Module (src/core/db_ops.py)
-
-1. **Search Operations:**
-   - create_search()
-   - get_search()
-   - update_search_status()
-   - list_searches()
-
-2. **SearchResult Operations:**
-   - bulk_insert_results()
-   - get_search_results()
-   - update_result_analysis()
-   - count_results()
-
-3. **Task Queue Operations:**
-   - enqueue_task()
-   - dequeue_task()
-   - complete_task()
-   - retry_failed_task()
-   - get_pending_tasks()
-
-4. **Cache Operations:**
-   - get_cache()
-   - set_cache()
-   - delete_cache()
-   - cleanup_expired_cache()
-
-5. **Rate Limit Operations:**
-   - check_rate_limit()
-   - update_rate_limit()
-   - reset_rate_limits()
-
-### Step 4.2: Implement Bulk Operations
-
-1. Bulk insert with chunk processing
-2. Batch updates for efficiency
-3. Streaming query results
-4. Pagination support
-
-## Phase 5: Database Initialization & Migration (1.5 hours)
-
-### Step 5.1: Create Setup Script (scripts/init_database.py)
-
-1. Check if database exists
-2. Create database file if needed
-3. Run table creation
-4. Create indexes
-5. Insert default data if needed
-6. Verify database integrity
-
-### Step 5.2: Index Creation Strategy
-
-Create indexes for:
-1. `searches(status)` - Filter active searches
-2. `search_results(search_id)` - Join optimization
-3. `cache(expires_at)` - Cleanup queries
-4. `task_queue(status, priority)` - Task selection
-5. `rate_limits(scraper_name)` - Rate check
-
-## Phase 6: Testing Implementation (2 hours)
-
-### Step 6.1: Unit Tests (tests/test_database.py)
-
-Test cases:
-1. Database initialization
-2. Model creation and relationships
-3. CRUD operations for each model
-4. Transaction handling
-5. Concurrent access (WAL mode)
-6. Cache expiration
-7. Task queue priority
-8. Connection pool behavior
-9. Error handling and rollback
-10. Performance benchmarks
-
-### Step 6.2: Integration Tests
-
-1. Multi-table transactions
-2. Foreign key constraints
-3. Cascade operations
-4. Queue processing simulation
-5. Cache cleanup routine
-
-## Phase 7: Performance Optimization (1 hour)
-
-### Step 7.1: SQLite Tuning
-
-1. Implement PRAGMA optimizations:
-   - `journal_mode=WAL`
-   - `cache_size=10000`
-   - `temp_store=MEMORY`
-   - `synchronous=NORMAL`
-   - `foreign_keys=ON`
-
-2. Connection pool tuning:
-   - `pool_size=5`
-   - `max_overflow=10`
-   - `pool_pre_ping=True`
-
-### Step 7.2: Query Optimization
-
-1. Add composite indexes where needed
-2. Implement query result caching
-3. Use prepared statements
-4. Batch operations
-
-## Phase 8: Documentation & Validation (1 hour)
-
-### Step 8.1: Create Documentation
-
-1. API documentation for each function
-2. Database schema diagram
-3. Usage examples
-4. Performance benchmarks
-5. Troubleshooting guide
-
-### Step 8.2: Final Validation Checklist
-
-- [ ] All models created successfully
-- [ ] WAL mode enabled
-- [ ] Indexes created
-- [ ] Connection pooling works
-- [ ] Async operations functional
-- [ ] Transactions work correctly
-- [ ] Error handling robust
-- [ ] Unit tests pass (>80% coverage)
-- [ ] Performance meets targets
-- [ ] Documentation complete
-
-## Implementation Timeline
-
-### Day 1 (8 hours):
-
-**Morning (4 hours):**
-- Phase 1: Environment setup (30 min)
-- Phase 2: Models implementation (2 hours)
-- Phase 3: Connection manager (1.5 hours)
-
-**Afternoon (4 hours):**
-- Phase 4: Database operations (3 hours)
-- Phase 5: Initialization scripts (1 hour)
-
-### Day 2 (8 hours):
-
-**Morning (4 hours):**
-- Phase 5 (continued): Migration setup (30 min)
-- Phase 6: Testing implementation (2 hours)
-- Phase 7: Performance optimization (1.5 hours)
-
-**Afternoon (4 hours):**
-- Phase 8: Documentation (1 hour)
-- Integration testing (2 hours)
-- Bug fixes and refinement (1 hour)
-
-## Key Implementation Notes
-
-1. **Start Simple:** Begin with basic CRUD operations, then add complexity
-2. **Test Early:** Write tests alongside implementation
-3. **Use Type Hints:** Add type annotations for better IDE support
-4. **Handle Errors:** Implement proper error handling from the start
-5. **Document As You Go:** Add docstrings immediately
-6. **Version Control:** Commit after each major step
-
-## Potential Challenges & Solutions
-
-### 1. Challenge: SQLite locking issues
-**Solution:** Ensure WAL mode is enabled, use proper transaction scoping
-
-### 2. Challenge: Async complexity
-**Solution:** Use async context managers, test thoroughly
-
-### 3. Challenge: Performance with large datasets
-**Solution:** Implement pagination, use indexes, batch operations
-
-### 4. Challenge: Testing async code
-**Solution:** Use pytest-asyncio, create proper fixtures
-
-## Success Criteria
-
-- ✅ Database initializes without errors
-- ✅ All CRUD operations work asynchronously
-- ✅ Concurrent access doesn't cause locks
-- ✅ Cache expiration works automatically
-- ✅ Task queue processes in priority order
-- ✅ 80%+ test coverage achieved
-- ✅ Performance targets met (<100ms for queries)
+# Complete Configuration Management Guide for Beginners
+
+## Table of Contents
+1. [What is Configuration Management?](#what-is-configuration-management)
+2. [Why Do We Need It?](#why-do-we-need-it)
+3. [Project Structure Setup](#project-structure-setup)
+4. [Step-by-Step Implementation](#step-by-step-implementation)
+5. [Testing Your Configuration](#testing-your-configuration)
+6. [Common Pitfalls](#common-pitfalls)
 
 ---
 
-## 📦 Ready to Code?
+## What is Configuration Management?
 
-### Claude's Implementation Plan:
+Configuration management is how your application stores and accesses **settings** that control its behavior. Think of it like a control panel for your app.
 
-**Module 1: Database Infrastructure Implementation Plan**
+### Real-World Analogy
+Imagine your app is a car:
+- **Configuration** = Dashboard settings (radio volume, seat position, AC temperature)
+- **Environment Variables** = Driver preferences that change per person
+- **Validation** = Safety checks (can't set speed to 1000 mph)
 
-#### Day 1 Tasks:
+### What Goes in Configuration?
+- Database connection strings
+- API endpoints (like Ollama URL)
+- Timeouts and retry counts
+- File paths
+- Security keys
+- Feature flags
 
-1. **Environment Setup (30 min)**
-   - Create project directories
-   - Install SQLAlchemy, aiosqlite, pytest-asyncio
+---
 
-2. **Implement Models (2 hrs)**
-   - Create all 6 database models in `src/core/models.py`
-   - Add proper relationships and constraints
+## Why Do We Need It?
 
-3. **Build Connection Manager (1.5 hrs)**
-   - Create DatabaseManager class in `src/core/database.py`
-   - Enable WAL mode and optimizations
+### Problem Without Config Management
+```python
+# Bad: Hardcoded values scattered everywhere
+def scrape_website():
+    timeout = 30  # What if we need to change this?
+    retry = 3
+    url = "http://localhost:11434"  # What if server moves?
+```
 
-4. **Database Operations (3 hrs)**
-   - Implement CRUD operations in `src/core/db_ops.py`
-   - Add task queue and cache operations
+**Issues:**
+- Change one value → edit 20 files
+- Different settings for dev/production → maintain 2 codebases
+- Secrets in code → security risk
+- No validation → runtime errors
 
-5. **Initialization Script (1 hr)**
-   - Create `scripts/init_database.py`
-   - Add index creation
+### Solution With Config Management
+```python
+# Good: Centralized, validated settings
+from src.core.config import settings
 
-#### Day 2 Tasks:
+def scrape_website():
+    timeout = settings.SCRAPER_TIMEOUT  # Change once, affects everywhere
+    retry = settings.SCRAPER_RETRY_COUNT
+    url = settings.OLLAMA_URL
+```
 
-1. **Complete Testing (2.5 hrs)**
-   - Write comprehensive unit tests
-   - Test concurrent access and transactions
+**Benefits:**
+- Single source of truth
+- Environment-specific configs (.env files)
+- Type validation (catches errors early)
+- Secure secret management
 
-2. **Performance Optimization (1.5 hrs)**
-   - Tune SQLite parameters
-   - Add query optimizations
+---
 
-3. **Documentation & Integration (4 hrs)**
-   - Complete API documentation
-   - Integration testing
-   - Bug fixes and refinement
+## Project Structure Setup
 
-**Goal:** Fully functional async SQLite database layer with all 6 models, optimized for concurrent access, with 80%+ test coverage.
+### Step 1: Create Directory Structure
+
+```bash
+ciap_project/
+├── src/
+│   └── core/
+│       ├── __init__.py          # Empty file (makes it a package)
+│       ├── config.py            # Main settings class
+│       └── config_utils.py      # Helper utilities
+├── config/
+│   └── prompts/                 # LLM prompt templates
+│       ├── sentiment.txt
+│       └── competitor.txt
+├── data/
+│   ├── logs/                    # Log files
+│   └── exports/                 # Export outputs
+├── tests/
+│   └── test_config.py           # Configuration tests
+├── .env                         # Your actual settings (NEVER commit)
+├── .env.example                 # Template (safe to commit)
+└── requirements.txt             # Python dependencies
+```
+
+**Why This Structure?**
+- `src/core/` = Foundational modules used by everything
+- `config/` = Static configuration files
+- `data/` = Runtime-generated files
+- `.env` = Secret settings (gitignored)
+- `.env.example` = Public template
+
+### Step 2: Create `__init__.py` Files
+
+```python
+# src/__init__.py
+# Empty file - just tells Python this is a package
+
+# src/core/__init__.py
+from .config import settings
+
+__all__ = ["settings"]
+```
+
+**Why?** This allows you to import like:
+```python
+from src.core import settings  # Instead of from src.core.config import settings
+```
+
+---
+
+## Step-by-Step Implementation
+
+### Step 1: Install Dependencies
+
+Create `requirements.txt`:
+```txt
+pydantic==2.5.0
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+```
+
+Install them:
+```bash
+pip install -r requirements.txt
+```
+
+**What Each Does:**
+- `pydantic` = Data validation library (ensures types are correct)
+- `pydantic-settings` = Loads settings from environment variables
+- `python-dotenv` = Reads `.env` files
+
+---
+
+### Step 2: Create `.env.example` Template
+
+This is a **template** that shows what settings are available. It's safe to commit to git.
+
+```bash
+# .env.example
+
+# === Environment ===
+ENVIRONMENT=development
+
+# === Database ===
+DATABASE_URL=sqlite:///data/ciap.db
+DATABASE_POOL_SIZE=5
+
+# === Ollama LLM ===
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1:8b
+OLLAMA_TIMEOUT=60
+
+# === Scraping ===
+SCRAPER_TIMEOUT=30
+SCRAPER_RETRY_COUNT=3
+
+# === API ===
+API_HOST=0.0.0.0
+API_PORT=8000
+
+# === Security ===
+SECRET_KEY=CHANGE-THIS-IN-PRODUCTION
+
+# === Logging ===
+LOG_LEVEL=INFO
+LOG_FILE=data/logs/ciap.log
+```
+
+---
+
+### Step 3: Create Your Actual `.env` File
+
+Copy the template and fill in **real values**:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your actual settings:
+```bash
+# .env (NEVER COMMIT THIS FILE)
+
+ENVIRONMENT=development
+DATABASE_URL=sqlite:///data/ciap.db
+OLLAMA_URL=http://localhost:11434
+SECRET_KEY=my-super-secret-key-that-is-32-chars-long
+```
+
+**Important:** Add `.env` to `.gitignore`:
+```
+# .gitignore
+.env
+*.log
+data/
+```
+
+---
+
+### Step 4: Create `config.py` - The Main Settings Class
+
+Let's build this step-by-step with explanations:
+
+```python
+# src/core/config.py
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, validator
+from enum import Enum
+from pathlib import Path
+from typing import List, Optional
+```
+
+**What's Imported:**
+- `BaseSettings` = Base class that loads environment variables
+- `Field` = Adds validation rules and descriptions
+- `validator` = Custom validation functions
+- `Enum` = Creates constants (like DEVELOPMENT, PRODUCTION)
+
+#### Part A: Define Enums (Constants)
+
+```python
+class Environment(str, Enum):
+    """Valid application environments"""
+    DEVELOPMENT = "development"
+    TESTING = "testing"
+    PRODUCTION = "production"
+
+class LogLevel(str, Enum):
+    """Valid logging levels"""
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+```
+
+**Why Enums?**
+- Prevents typos (can't accidentally use "PROD" instead of "production")
+- IDE autocomplete
+- Type checking
+
+#### Part B: Create Settings Class
+
+```python
+class Settings(BaseSettings):
+    """Application settings with validation"""
+    
+    # Environment
+    ENVIRONMENT: Environment = Field(
+        default=Environment.DEVELOPMENT,
+        description="Application environment"
+    )
+```
+
+**Breaking This Down:**
+- `ENVIRONMENT: Environment` = Variable name and type
+- `Field(...)` = Adds validation and metadata
+- `default=...` = Value if not in .env
+- `description=...` = Documentation
+
+**More Examples:**
+
+```python
+    # Database
+    DATABASE_URL: str = Field(
+        default="sqlite:///data/ciap.db",
+        description="SQLite database URL"
+    )
+    
+    DATABASE_POOL_SIZE: int = Field(
+        default=5,
+        ge=1,      # Greater than or equal to 1
+        le=20,     # Less than or equal to 20
+        description="Database connection pool size"
+    )
+```
+
+**What `ge` and `le` Do:**
+```python
+DATABASE_POOL_SIZE=25  # ❌ Error: Must be <= 20
+DATABASE_POOL_SIZE=0   # ❌ Error: Must be >= 1
+DATABASE_POOL_SIZE=10  # ✅ Valid
+```
+
+#### Part C: Configuration for Pydantic
+
+```python
+    model_config = SettingsConfigDict(
+        env_file=".env",              # Read from .env file
+        env_file_encoding="utf-8",    # File encoding
+        case_sensitive=True,          # ENVIRONMENT != environment
+        extra="ignore"                # Ignore unknown env vars
+    )
+```
+
+**Why This Matters:**
+- `env_file=".env"` = Automatically loads .env
+- `case_sensitive=True` = `API_PORT` ≠ `api_port` (prevents confusion)
+- `extra="ignore"` = Don't error on extra env vars (useful if system has other vars)
+
+#### Part D: Custom Validators
+
+```python
+    @validator("DATABASE_URL")
+    def validate_database_url(cls, v):
+        """Ensure database URL is valid SQLite"""
+        if not v.startswith("sqlite:///"):
+            raise ValueError("DATABASE_URL must start with 'sqlite:///'")
+        return v
+```
+
+**How This Works:**
+1. User sets `DATABASE_URL=postgresql://localhost/db` in .env
+2. Pydantic loads it
+3. This validator runs automatically
+4. Sees it doesn't start with `sqlite:///`
+5. **Raises error immediately** (before your app even starts)
+
+**Another Example - Production Safety:**
+
+```python
+    @validator("SECRET_KEY")
+    def validate_secret_key(cls, v, values):
+        """Warn about default secret key in production"""
+        env = values.get("ENVIRONMENT")
+        if env == Environment.PRODUCTION:
+            if v == "CHANGE-THIS-IN-PRODUCTION":
+                raise ValueError("Must change SECRET_KEY in production!")
+        return v
+```
+
+**What This Prevents:**
+```python
+# .env
+ENVIRONMENT=production
+SECRET_KEY=CHANGE-THIS-IN-PRODUCTION  # ❌ App won't start - forces you to change it
+```
+
+#### Part E: Helper Methods
+
+```python
+    def get_database_url_async(self) -> str:
+        """Convert sync database URL to async"""
+        return self.DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
+```
+
+**Why?** SQLAlchemy needs different URLs for sync vs async:
+- Sync: `sqlite:///data/ciap.db`
+- Async: `sqlite+aiosqlite:///data/ciap.db`
+
+```python
+    def get_user_agent(self) -> str:
+        """Get random user agent for scraping"""
+        import random
+        return random.choice(self.SCRAPER_USER_AGENTS)
+```
+
+**Usage:**
+```python
+headers = {"User-Agent": settings.get_user_agent()}  # Different each time
+```
+
+#### Part F: Create Global Instance
+
+```python
+# At the end of config.py
+settings = Settings()
+```
+
+**This is the magic line!** Now everywhere in your app:
+```python
+from src.core.config import settings
+
+print(settings.DATABASE_URL)  # Works immediately
+```
+
+---
+
+### Step 5: Create `config_utils.py` - Helper Functions
+
+```python
+# src/core/config_utils.py
+
+from pathlib import Path
+from typing import Dict, List
+from .config import settings
+import requests
+
+class ConfigManager:
+    """Utilities for managing configuration"""
+    
+    @staticmethod
+    def validate_environment():
+        """Check if environment is set up correctly"""
+        issues = []
+        
+        # Check if directories exist
+        directories = [
+            Path(settings.DATA_DIR),
+            Path(settings.LOG_FILE).parent,
+            Path(settings.EXPORT_DIR),
+        ]
+        
+        for directory in directories:
+            if not directory.exists():
+                try:
+                    directory.mkdir(parents=True, exist_ok=True)
+                    print(f"✅ Created directory: {directory}")
+                except Exception as e:
+                    issues.append(f"❌ Cannot create {directory}: {e}")
+        
+        # Check Ollama connection
+        try:
+            response = requests.get(
+                f"{settings.OLLAMA_URL}/api/tags",
+                timeout=5
+            )
+            if response.status_code == 200:
+                print(f"✅ Ollama is running at {settings.OLLAMA_URL}")
+            else:
+                issues.append(f"⚠️  Ollama returned status {response.status_code}")
+        except Exception as e:
+            issues.append(f"❌ Cannot connect to Ollama: {e}")
+        
+        return issues
+```
+
+**What This Does:**
+1. Creates missing directories automatically
+2. Checks if Ollama is running
+3. Returns list of problems (if any)
+
+**Usage:**
+```python
+from src.core.config_utils import ConfigManager
+
+issues = ConfigManager.validate_environment()
+if issues:
+    print("Problems found:")
+    for issue in issues:
+        print(issue)
+    exit(1)  # Stop the app
+```
+
+---
+
+## Testing Your Configuration
+
+### Manual Testing
+
+Create `test_config_manual.py`:
+
+```python
+# test_config_manual.py
+
+from src.core.config import settings
+from src.core.config_utils import ConfigManager
+
+def test_basic_settings():
+    """Test if settings load correctly"""
+    print("=== Basic Settings ===")
+    print(f"Environment: {settings.ENVIRONMENT}")
+    print(f"Database URL: {settings.DATABASE_URL}")
+    print(f"Ollama URL: {settings.OLLAMA_URL}")
+    print(f"API Port: {settings.API_PORT}")
+    print(f"Log Level: {settings.LOG_LEVEL}")
+
+def test_validation():
+    """Test environment validation"""
+    print("\n=== Environment Validation ===")
+    issues = ConfigManager.validate_environment()
+    
+    if not issues:
+        print("✅ All checks passed!")
+    else:
+        print("❌ Issues found:")
+        for issue in issues:
+            print(f"  {issue}")
+
+def test_helper_methods():
+    """Test helper methods"""
+    print("\n=== Helper Methods ===")
+    print(f"Async DB URL: {settings.get_database_url_async()}")
+    print(f"Random User Agent: {settings.get_user_agent()}")
+
+if __name__ == "__main__":
+    test_basic_settings()
+    test_validation()
+    test_helper_methods()
+```
+
+Run it:
+```bash
+python test_config_manual.py
+```
+
+**Expected Output:**
+```
+=== Basic Settings ===
+Environment: development
+Database URL: sqlite:///data/ciap.db
+Ollama URL: http://localhost:11434
+API Port: 8000
+Log Level: INFO
+
+=== Environment Validation ===
+✅ Created directory: data
+✅ Created directory: data/logs
+✅ Ollama is running at http://localhost:11434
+✅ All checks passed!
+
+=== Helper Methods ===
+Async DB URL: sqlite+aiosqlite:///data/ciap.db
+Random User Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)...
+```
+
+### Automated Unit Tests
+
+Create `tests/test_config.py`:
+
+```python
+# tests/test_config.py
+
+import pytest
+from unittest.mock import patch
+import os
+from src.core.config import Settings, Environment
+
+def test_default_values():
+    """Test that default values work"""
+    settings = Settings()
+    assert settings.ENVIRONMENT == Environment.DEVELOPMENT
+    assert settings.API_PORT == 8000
+
+def test_env_override():
+    """Test that .env overrides defaults"""
+    with patch.dict(os.environ, {"API_PORT": "9000"}):
+        settings = Settings()
+        assert settings.API_PORT == 9000
+
+def test_validation_catches_errors():
+    """Test that validation works"""
+    # Invalid database URL
+    with pytest.raises(ValueError):
+        Settings(DATABASE_URL="postgres://localhost/db")
+    
+    # Port out of range
+    with pytest.raises(ValueError):
+        Settings(API_PORT=99999)
+```
+
+Run tests:
+```bash
+pytest tests/test_config.py -v
+```
+
+---
+
+## Common Pitfalls
+
+### Pitfall 1: Forgetting to Create .env
+
+**Error:**
+```
+❌ Settings not loading, using all defaults
+```
+
+**Solution:**
+```bash
+cp .env.example .env
+```
+
+### Pitfall 2: Wrong Data Types in .env
+
+**Error:**
+```
+pydantic.ValidationError: API_PORT must be an integer
+```
+
+**Problem in .env:**
+```bash
+API_PORT="8000"  # ❌ Strings in quotes don't convert to int
+```
+
+**Fix:**
+```bash
+API_PORT=8000  # ✅ No quotes for numbers
+```
+
+### Pitfall 3: Case Sensitivity
+
+**Problem:**
+```bash
+# .env
+api_port=8000  # ❌ Wrong case
+```
+
+**Fix:**
+```bash
+# .env
+API_PORT=8000  # ✅ Must match exactly
+```
+
+### Pitfall 4: Committing .env to Git
+
+**Prevention:**
+```bash
+# .gitignore
+.env
+*.log
+data/
+__pycache__/
+```
+
+Verify:
+```bash
+git status  # .env should NOT appear
+```
+
+### Pitfall 5: Not Validating Early
+
+**Bad:**
+```python
+# app.py
+from src.core.config import settings
+
+# App runs for 10 minutes...
+# Then tries to connect to database
+db.connect(settings.DATABASE_URL)  # ❌ Fails here - wasted time
+```
+
+**Good:**
+```python
+# app.py
+from src.core.config import settings
+from src.core.config_utils import ConfigManager
+
+# Validate immediately on startup
+issues = ConfigManager.validate_environment()
+if issues:
+    print("Configuration errors:")
+    for issue in issues:
+        print(issue)
+    exit(1)
+
+# Now we know config is good
+db.connect(settings.DATABASE_URL)  # ✅ Will work
+```
+
+---
+
+## Next Steps
+
+1. **Implement the Settings class** from Step 4
+2. **Create .env file** with your actual values
+3. **Run manual tests** to verify everything works
+4. **Add validation** to your app's startup sequence
+5. **Integrate with other modules** (database, logging, etc.)
+
+### Integration Example
+
+```python
+# main.py - Your app's entry point
+
+from src.core.config import settings
+from src.core.config_utils import ConfigManager
+import logging
+
+def setup():
+    """Set up application"""
+    # Validate environment
+    issues = ConfigManager.validate_environment()
+    if issues:
+        for issue in issues:
+            print(issue)
+        exit(1)
+    
+    # Configure logging
+    logging.basicConfig(
+        level=getattr(logging, settings.LOG_LEVEL),
+        filename=settings.LOG_FILE,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    logging.info(f"Application started in {settings.ENVIRONMENT} mode")
+
+def main():
+    setup()
+    # Your app logic here
+    print(f"API running on {settings.API_HOST}:{settings.API_PORT}")
+
+if __name__ == "__main__":
+    main()
+```
+
+---
+
+## Quick Reference
+
+### Accessing Settings
+```python
+from src.core.config import settings
+
+# Simple access
+url = settings.DATABASE_URL
+timeout = settings.SCRAPER_TIMEOUT
+
+# Helper methods
+async_url = settings.get_database_url_async()
+user_agent = settings.get_user_agent()
+```
+
+### Overriding for Tests
+```python
+# In tests
+test_settings = Settings(
+    DATABASE_URL="sqlite:///:memory:",
+    ENVIRONMENT=Environment.TESTING
+)
+```
+
+### Validation
+```python
+from src.core.config_utils import ConfigManager
+
+issues = ConfigManager.validate_environment()
+if issues:
+    # Handle problems
+    pass
+```
+
+### Environment-Specific Logic
+```python
+if settings.ENVIRONMENT == Environment.PRODUCTION:
+    # Production-only code
+    enable_monitoring()
+elif settings.ENVIRONMENT == Environment.DEVELOPMENT:
+    # Dev-only code
+    enable_debug_toolbar()
+```
+
+---
+
+## Summary
+
+Configuration management gives you:
+- ✅ Single source of truth for settings
+- ✅ Type safety and validation
+- ✅ Environment-specific configs
+- ✅ Secure secret management
+- ✅ Early error detection
+- ✅ Easy testing
+
+By implementing this module first, you create a solid foundation for all other modules in your project.
