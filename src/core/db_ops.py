@@ -406,7 +406,7 @@ class DatabaseOperations:
     ):
         """Bulk add reviews for a product"""
         review_objects = [
-            ProductReview(product_id=product_id, **review)
+            ProductReview(product_id=product_id, **{k: v for k, v in review.items() if k != 'product_id'})
             for review in reviews
         ]
         session.add_all(review_objects)
@@ -436,7 +436,7 @@ class DatabaseOperations:
         for chunk_idx in range(0, len(reviews), chunk_size):
             chunk = reviews[chunk_idx:chunk_idx + chunk_size]
             review_objects = [
-                ProductReview(product_id=product_id, **review)
+                ProductReview(product_id=product_id, **{k: v for k, v in review.items() if k != 'product_id'})
                 for review in chunk
             ]
 

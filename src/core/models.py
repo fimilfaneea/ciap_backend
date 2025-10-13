@@ -369,7 +369,7 @@ class PriceHistory(Base):
     __tablename__ = "price_history"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    product_id = Column(Integer, ForeignKey("products.id"))
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="CASCADE"))
     price = Column(Float)
     currency = Column(String(10))
     seller_name = Column(String(200))

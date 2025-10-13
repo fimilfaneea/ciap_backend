@@ -62,6 +62,18 @@ class DatabaseManager:
             pool_pre_ping=True,  # Verify connections are alive
         )
 
+        # Set PRAGMAs on every new connection to ensure they persist
+        # This is necessary because SQLite PRAGMAs are connection-specific
+        @event.listens_for(self.engine.sync_engine, "connect")
+        def set_sqlite_pragma(dbapi_conn, connection_record):
+            """Apply SQLite PRAGMAs to each connection"""
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("PRAGMA temp_store = MEMORY")
+            cursor.execute("PRAGMA synchronous = NORMAL")
+            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.close()
+
         # Create session factory
         self.async_session = async_sessionmaker(
             self.engine,
