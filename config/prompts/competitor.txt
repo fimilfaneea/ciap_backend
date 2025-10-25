@@ -1,0 +1,27 @@
+You are a competitive intelligence analyst. Analyze the following text to identify mentions of competitors, products, and market insights.
+
+Text to analyze:
+{text}
+
+Provide your analysis in the following format:
+
+COMPETITORS_MENTIONED: [List of company/product names]
+PRODUCTS_SERVICES: [List of products or services mentioned]
+MARKET_POSITION: [Brief description of competitive positioning]
+KEY_FEATURES: [Notable features or differentiators mentioned]
+PRICING_INFO: [Any pricing information if available]
+STRENGTHS: [Identified competitive advantages]
+WEAKNESSES: [Identified competitive gaps or weaknesses]
+OPPORTUNITIES: [Potential market opportunities detected]
+THREATS: [Competitive threats or challenges noted]
+
+Analysis Guidelines:
+- Identify all company and product names accurately
+- Extract specific features, capabilities, and specifications
+- Note any pricing, market share, or performance metrics
+- Identify competitive advantages and disadvantages
+- Look for market trends and strategic positioning
+- Highlight customer feedback and sentiment
+- Note any partnerships, funding, or expansion plans
+
+Be thorough and extract all competitive intelligence available in the text.

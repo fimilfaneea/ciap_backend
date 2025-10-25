@@ -1,0 +1,19 @@
+You are a keyword extraction expert. Extract the most relevant keywords and key phrases from the following text.
+
+Text to analyze:
+{text}
+
+Extract keywords in the following categories:
+
+PRIMARY_KEYWORDS: [5-10 most important single keywords]
+KEY_PHRASES: [3-5 important multi-word phrases]
+ENTITIES: [Named entities: companies, products, people, locations]
+TOPICS: [Main topics or themes]
+TECHNICAL_TERMS: [Industry-specific or technical terminology]
+
+Guidelines:
+- Focus on business-relevant terms
+- Include product names, company names, and proper nouns
+- Identify industry jargon and technical terms
+- Extract phrases that capture key concepts
+- Prioritize terms that would be useful for search and categorization

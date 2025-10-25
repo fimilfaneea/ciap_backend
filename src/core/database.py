@@ -13,9 +13,10 @@ from pathlib import Path
 import logging
 from .models import Base
 from .fts_setup import setup_fts5
+from .config import settings
 
-# Setup logging
-logging.basicConfig(level=logging.INFO)
+# Setup logging with configuration
+logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
 
@@ -30,13 +31,12 @@ class DatabaseManager:
         Initialize database manager
 
         Args:
-            database_url: SQLite database URL. Defaults to data/ciap.db
+            database_url: SQLite database URL. If None, uses settings.get_database_url_async()
+                         Allows override for testing with in-memory databases.
         """
         if database_url is None:
-            # Create data directory if it doesn't exist
-            data_dir = Path("data")
-            data_dir.mkdir(exist_ok=True)
-            database_url = f"sqlite+aiosqlite:///{data_dir}/ciap.db"
+            # Use configuration-based database URL
+            database_url = settings.get_database_url_async()
 
         self.database_url = database_url
         self.engine = None
@@ -58,7 +58,7 @@ class DatabaseManager:
         # Note: SQLite doesn't support connection pooling (uses NullPool)
         self.engine = create_async_engine(
             self.database_url,
-            echo=False,  # Set to True for SQL debugging
+            echo=settings.DATABASE_ECHO,  # Use configuration for SQL logging
             pool_pre_ping=True,  # Verify connections are alive
         )
 
