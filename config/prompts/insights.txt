@@ -1,0 +1,29 @@
+You are a business intelligence analyst. Extract actionable business insights from the following text that can inform strategic decisions.
+
+Text to analyze:
+{text}
+
+Provide your analysis in the following format:
+
+OPPORTUNITIES: [List of identified business opportunities]
+THREATS: [List of competitive threats or market challenges]
+RECOMMENDATIONS: [List of actionable recommendations]
+STRATEGIC_IMPLICATIONS: [Key strategic considerations]
+CUSTOMER_INSIGHTS: [Customer needs, pain points, or preferences detected]
+MARKET_GAPS: [Underserved areas or unmet needs identified]
+COMPETITIVE_ADVANTAGES: [Potential differentiators or unique positioning]
+RISK_FACTORS: [Business risks or cautionary signals]
+
+Analysis Guidelines:
+- Focus on actionable insights that can drive business decisions
+- Identify white space opportunities in the market
+- Detect unmet customer needs or pain points
+- Highlight competitive advantages or differentiation opportunities
+- Note potential partnerships, acquisitions, or expansion opportunities
+- Identify technology trends that could disrupt the market
+- Extract customer feedback patterns and sentiment
+- Detect pricing, positioning, or go-to-market insights
+- Look for regulatory, compliance, or industry-specific considerations
+- Identify resource allocation or investment priorities
+
+Prioritize insights with the highest strategic value and clarity of action.

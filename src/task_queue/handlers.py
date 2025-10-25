@@ -91,72 +91,117 @@ async def analyze_handler(payload: Dict[str, Any]) -> Dict:
     """
     Handle analysis tasks
 
-    TODO: Integration with Module 7 (LLM Analyzer)
-    This is a placeholder. Real implementation will be added when Module 7 is complete.
-    Will integrate with ollama_client.analyze() when available.
+    Integration with Module 7 (LLM Analyzer)
+    Uses ollama_client for text analysis or specialized analyzers for search result analysis.
 
     Args:
-        payload: Task data with text and analysis type
-            Expected keys:
+        payload: Task data with analysis configuration
+            For text analysis:
             - text: str - Text to analyze
-            - type: str - Analysis type (e.g., "sentiment", "competitor", "summary")
-            - search_id: int - Optional search ID for result linking
+            - type: str - Analysis type (sentiment, competitor, summary, trends, insights, keywords)
+            - use_cache: bool - Whether to use cache (default: True)
+
+            For search result analysis:
+            - search_id: int - Search ID to analyze
+            - analyzer: str - Analyzer type (sentiment, competitor, trend)
+            - sample_size: int - Optional sample size (default: 50 for sentiment)
+            - known_competitors: List[str] - Optional known competitors list
 
     Returns:
         Analysis results dictionary
 
-    Example:
+    Examples:
+        # Text analysis
         result = await analyze_handler({
             "text": "Great product!",
-            "type": "sentiment",
-            "search_id": 123
+            "type": "sentiment"
+        })
+
+        # Search result analysis
+        result = await analyze_handler({
+            "search_id": 123,
+            "analyzer": "sentiment",
+            "sample_size": 50
         })
     """
+    from ..analyzers import ollama_client, SentimentAnalyzer, CompetitorAnalyzer, TrendAnalyzer
+
+    search_id = payload.get("search_id")
     text = payload.get("text", "")
     analysis_type = payload.get("type", "sentiment")
-    search_id = payload.get("search_id")
+    analyzer_type = payload.get("analyzer")
+    use_cache = payload.get("use_cache", True)
 
-    logger.warning(f"Using placeholder analyze_handler for type '{analysis_type}'")
-    logger.info(f"Analyzing text (type={analysis_type}, search_id={search_id})")
+    try:
+        # Check if this is search result analysis
+        if search_id and analyzer_type:
+            logger.info(
+                f"Analyzing search {search_id} with {analyzer_type} analyzer"
+            )
 
-    # TODO: Replace with actual LLM analyzer implementation
-    # from src.analyzers.ollama_client import ollama_client
-    # result = await ollama_client.analyze(text=text, analysis_type=analysis_type)
+            if analyzer_type == "sentiment":
+                analyzer = SentimentAnalyzer()
+                sample_size = payload.get("sample_size", 50)
+                result = await analyzer.analyze_search_results(
+                    search_id=search_id,
+                    sample_size=sample_size
+                )
 
-    # Simulate analysis work
-    await asyncio.sleep(0.1)
+            elif analyzer_type == "competitor":
+                analyzer = CompetitorAnalyzer()
+                known_competitors = payload.get("known_competitors", None)
+                result = await analyzer.analyze_competitors(
+                    search_id=search_id,
+                    known_competitors=known_competitors
+                )
 
-    # Return mock analysis based on type
-    mock_results = {
-        "sentiment": {
-            "sentiment": "positive",
-            "confidence": 0.85,
-            "score": 0.7
-        },
-        "competitor": {
-            "competitors": ["Competitor A", "Competitor B"],
-            "strengths": ["Good pricing", "Fast delivery"],
-            "weaknesses": ["Limited features"]
-        },
-        "summary": {
-            "summary": f"This is a mock summary of: {text[:100]}...",
-            "key_points": ["Point 1", "Point 2", "Point 3"]
-        },
-        "keywords": {
-            "keywords": ["keyword1", "keyword2", "keyword3"],
-            "entities": ["Entity A", "Entity B"]
+            elif analyzer_type == "trend":
+                analyzer = TrendAnalyzer()
+                result = await analyzer.analyze_trends(search_id=search_id)
+
+            else:
+                raise ValueError(f"Unknown analyzer type: {analyzer_type}")
+
+            logger.info(
+                f"Analysis completed for search {search_id} with {analyzer_type}"
+            )
+            return {
+                "status": "success",
+                "search_id": search_id,
+                "analyzer": analyzer_type,
+                "result": result
+            }
+
+        # Otherwise, perform text analysis
+        elif text:
+            logger.info(f"Analyzing text with type '{analysis_type}'")
+
+            result = await ollama_client.analyze(
+                text=text,
+                analysis_type=analysis_type,
+                use_cache=use_cache
+            )
+
+            logger.info(f"Text analysis completed for type '{analysis_type}'")
+            return {
+                "status": "success",
+                "type": analysis_type,
+                "result": result
+            }
+
+        else:
+            raise ValueError(
+                "Either 'search_id' with 'analyzer' or 'text' must be provided"
+            )
+
+    except Exception as e:
+        logger.error(f"Analysis handler failed: {e}")
+        return {
+            "status": "failed",
+            "error": str(e),
+            "search_id": search_id,
+            "type": analysis_type
         }
-    }
-
-    result = mock_results.get(analysis_type, {"analysis": "generic mock result"})
-
-    logger.info(f"Placeholder analyze_handler completed for type '{analysis_type}'")
-    return {
-        "status": "success",
-        "type": analysis_type,
-        "result": result,
-        "mock": True  # Flag to indicate this is mock data
-    }
 
 
 async def export_handler(payload: Dict[str, Any]) -> Dict:
