@@ -17,7 +17,7 @@ from .models import (
     NewsContent, FeatureComparison, Cache, TaskQueue, ScrapingJob,
     RateLimit, PriceHistory, CompetitorTracking, CompetitorProducts, Insights
 )
-from .database import db_manager
+from .manager import db_manager
 
 logger = logging.getLogger(__name__)
 

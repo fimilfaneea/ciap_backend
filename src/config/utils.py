@@ -22,7 +22,7 @@ class ConfigManager:
         Returns:
             Dictionary mapping prompt names to their content
         """
-        from .config import settings
+        from .settings import settings
 
         prompts = {}
         prompts_dir = Path(settings.PROMPTS_DIR)
@@ -51,7 +51,7 @@ class ConfigManager:
         Returns:
             List of user agent strings, or default list if file not found
         """
-        from .config import settings
+        from .settings import settings
 
         path = Path(file_path)
         if path.exists():
@@ -77,7 +77,7 @@ class ConfigManager:
         Returns:
             List of issues found (empty list if all checks pass)
         """
-        from .config import settings
+        from .settings import settings
         import requests
 
         issues = []
@@ -152,7 +152,7 @@ class ConfigManager:
         Returns:
             Path to exported config file
         """
-        from .config import settings
+        from .settings import settings
 
         config_dict = settings.to_dict(exclude_secrets=True)
         output_path = Path(output_file)
@@ -188,7 +188,7 @@ class ConfigManager:
         Returns:
             Dictionary with runtime information
         """
-        from .config import settings
+        from .settings import settings
         import platform
         import sys
 
@@ -220,7 +220,7 @@ class ConfigManager:
     @staticmethod
     def print_config_summary():
         """Print a formatted summary of current configuration"""
-        from .config import settings
+        from .settings import settings
 
         print("\n" + "="*60)
         print("CIAP Configuration Summary")

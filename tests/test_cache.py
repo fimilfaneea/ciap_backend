@@ -8,9 +8,9 @@ import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-from src.core.cache import CacheManager, cache, warm_cache
-from src.core.cache_decorators import cached, cache_result, invalidate_cache
-from src.core.cache_types import SearchCache, LLMCache, RateLimitCache, SessionCache
+from src.cache import CacheManager, cache, warm_cache
+from src.cache import cached, cache_result, invalidate_cache
+from src.cache import SearchCache, LLMCache, RateLimitCache, SessionCache
 
 
 @pytest.fixture

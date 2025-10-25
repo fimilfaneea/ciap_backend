@@ -12,8 +12,8 @@ import aiosqlite
 from pathlib import Path
 import logging
 from .models import Base
-from .fts_setup import setup_fts5
-from .config import settings
+from .fts import setup_fts5
+from ..config import settings
 
 # Setup logging with configuration
 logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL))
