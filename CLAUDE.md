@@ -648,6 +648,483 @@ async def test_cache_operations(test_cache):
     assert await test_cache.get("key") == "value"
 ```
 
+## Task Queue System
+
+### Overview
+
+SQLite-based asynchronous task queue with priority scheduling, retry logic, and worker pool management. Provides background job processing without external dependencies like Celery or Redis.
+
+**Key Features**:
+- Priority-based task scheduling (5 priority levels)
+- Worker pool with configurable size
+- Retry logic with exponential backoff
+- Task status tracking (6 states)
+- Task result caching
+- Task chaining and grouping
+- Recurring task scheduling
+- Workflow management
+
+### Core TaskQueueManager (`src/task_queue/manager.py`)
+
+**Basic Usage**:
+```python
+from src.task_queue import task_queue, TaskStatus, TaskPriority
+
+# Register handler
+async def my_handler(payload):
+    # Process task
+    return {"result": "success"}
+
+task_queue.register_handler("my_task", my_handler)
+
+# Start workers
+await task_queue.start()
+
+# Enqueue task
+task_id = await task_queue.enqueue(
+    "my_task",
+    {"data": "value"},
+    priority=TaskPriority.HIGH
+)
+
+# Check status
+status = await task_queue.get_task_status(task_id)
+print(f"Status: {status['status']}, Result: {status['result']}")
+
+# Stop workers
+await task_queue.stop()
+```
+
+**Priority Levels**:
+```python
+from src.task_queue import TaskPriority
+
+TaskPriority.CRITICAL    # 1 - Highest priority
+TaskPriority.HIGH        # 3
+TaskPriority.NORMAL      # 5 - Default
+TaskPriority.LOW         # 7
+TaskPriority.BACKGROUND  # 10 - Lowest priority
+```
+
+**Task States**:
+```python
+from src.task_queue import TaskStatus
+
+TaskStatus.PENDING      # Waiting to be processed
+TaskStatus.PROCESSING   # Currently being executed
+TaskStatus.COMPLETED    # Successfully finished
+TaskStatus.FAILED       # Failed but will retry
+TaskStatus.DEAD         # Failed after max retries
+TaskStatus.CANCELLED    # Manually cancelled
+```
+
+### Task Handlers (`src/task_queue/handlers.py`)
+
+**Default Handlers** (Placeholders for future modules):
+```python
+from src.task_queue import register_default_handlers
+
+# Register all default handlers at startup
+register_default_handlers()
+
+# Available handlers:
+# - scrape_handler (Module 5 - Web Scraper)
+# - analyze_handler (Module 7 - LLM Analyzer)
+# - export_handler (Module 9 - Export)
+# - batch_handler (functional - processes multiple tasks)
+```
+
+**Custom Handler Pattern**:
+```python
+async def custom_handler(payload: Dict[str, Any]) -> Dict:
+    """
+    Custom task handler
+
+    Args:
+        payload: Task data dictionary
+
+    Returns:
+        Result dictionary (will be cached)
+    """
+    # Extract data
+    data = payload.get("data")
+
+    # Process data
+    result = process_data(data)
+
+    # Return result
+    return {"status": "success", "result": result}
+
+# Register handler
+task_queue.register_handler("custom", custom_handler)
+```
+
+### Task Utilities
+
+**Sequential Execution (TaskChain)**:
+```python
+from src.task_queue import TaskChain
+
+chain = TaskChain()
+chain.add("scrape", {"query": "AI news"})
+chain.add("analyze", {"type": "sentiment"})
+chain.add("export", {"format": "csv"})
+
+# Execute tasks one after another
+task_ids = await chain.execute(timeout_per_task=300)
+```
+
+**Parallel Execution (TaskGroup)**:
+```python
+from src.task_queue import TaskGroup
+
+group = TaskGroup()
+group.add("scrape", {"query": "AI", "sources": ["google"]})
+group.add("scrape", {"query": "ML", "sources": ["bing"]})
+group.add("scrape", {"query": "Data", "sources": ["google", "bing"]})
+
+# Enqueue all tasks simultaneously
+task_ids = await group.execute()
+
+# Wait for all to complete
+results = await group.wait_all(task_ids, timeout=300)
+```
+
+**Wait for Task**:
+```python
+from src.task_queue import wait_for_task
+
+task_id = await task_queue.enqueue("process", {"data": "value"})
+
+# Poll until completion or timeout
+result = await wait_for_task(task_id, timeout=60, poll_interval=1.0)
+
+if result and result["status"] == TaskStatus.COMPLETED:
+    print(f"Result: {result['result']}")
+```
+
+**Recurring Tasks**:
+```python
+from src.task_queue import schedule_recurring_task, TaskPriority
+
+# Run every hour
+recurring_task = await schedule_recurring_task(
+    "scrape",
+    {"query": "AI news"},
+    interval_seconds=3600,
+    max_runs=24,  # Run 24 times (24 hours)
+    priority=TaskPriority.BACKGROUND
+)
+
+# Cancel later
+recurring_task.cancel()
+```
+
+**Workflows**:
+```python
+from src.task_queue import create_workflow, get_workflow_status
+
+# Create multi-step workflow
+workflow = await create_workflow(
+    "competitor_analysis",
+    [
+        {"type": "scrape", "payload": {"query": "competitor"}},
+        {"type": "analyze", "payload": {"type": "competitor"}},
+        {"type": "export", "payload": {"format": "csv"}}
+    ]
+)
+
+# Check workflow status
+status = await get_workflow_status(workflow["workflow_key"])
+```
+
+### Advanced Queue Operations
+
+**Batch Enqueue**:
+```python
+tasks = [
+    {"type": "scrape", "payload": {"query": f"query{i}"}}
+    for i in range(100)
+]
+
+task_ids = await task_queue.enqueue_batch(tasks, priority=TaskPriority.NORMAL)
+# More efficient than 100 individual enqueue() calls
+```
+
+**Cancel Task**:
+```python
+task_id = await task_queue.enqueue("long_task", {})
+
+# Cancel if still pending
+cancelled = await task_queue.cancel_task(task_id)
+```
+
+**Requeue Failed Tasks**:
+```python
+# Requeue all failed/stuck tasks for retry
+requeued_count = await task_queue.requeue_failed()
+print(f"Requeued {requeued_count} tasks")
+```
+
+**Queue Statistics**:
+```python
+stats = await task_queue.get_queue_stats()
+
+# Returns:
+# {
+#     'status_counts': {'pending': 10, 'processing': 2, 'completed': 50, ...},
+#     'type_counts': {'scrape': 30, 'analyze': 20, 'export': 12},
+#     'avg_wait_time_seconds': 5.2,
+#     'worker_count': 3,
+#     'active_workers': 3,
+#     'tasks_processed': 50,
+#     'tasks_failed': 2,
+#     'tasks_retried': 3,
+#     'avg_processing_time': 1.5
+# }
+```
+
+**Cleanup Old Tasks**:
+```python
+# Delete completed tasks older than 7 days
+deleted = await task_queue.cleanup_old_tasks(days=7)
+```
+
+### Integration Points
+
+**With Database Module**:
+```python
+from src.task_queue import task_queue
+from src.database import db_manager, DatabaseOperations
+
+async def database_task_handler(payload):
+    search_id = payload.get("search_id")
+
+    async with db_manager.get_session() as session:
+        search = await DatabaseOperations.get_search_by_id(session, search_id)
+        # Process search
+        return {"search": search.query}
+
+task_queue.register_handler("db_task", database_task_handler)
+```
+
+**With Cache Module**:
+```python
+from src.task_queue import task_queue
+from src.cache import cache, SearchCache
+
+async def cached_scrape_handler(payload):
+    query = payload.get("query")
+
+    # Check cache first
+    cached_results = await SearchCache.get_search_results(query, "google")
+    if cached_results:
+        return cached_results
+
+    # Perform scrape
+    results = perform_scrape(query)
+
+    # Cache results
+    await SearchCache.set_search_results(query, "google", results, ttl=3600)
+
+    return results
+```
+
+**With Config Module**:
+```python
+from src.task_queue import task_queue
+from src.config import settings
+
+# Configuration automatically used:
+# - settings.TASK_QUEUE_MAX_WORKERS (default: 3)
+# - settings.TASK_QUEUE_POLL_INTERVAL (default: 1.0)
+# - settings.TASK_MAX_RETRIES (default: 3)
+
+print(f"Worker count: {task_queue.worker_count}")
+print(f"Max retries: {task_queue.max_retries}")
+```
+
+### Testing Patterns
+
+**Test Fixture**:
+```python
+import pytest
+from src.task_queue import TaskQueueManager
+
+@pytest.fixture
+async def test_queue():
+    """Create isolated test queue"""
+    queue = TaskQueueManager()
+
+    # Register test handler
+    async def test_handler(payload):
+        await asyncio.sleep(0.1)
+        return {"result": f"processed_{payload.get('data')}"}
+
+    queue.register_handler("test", test_handler)
+    await queue.start()
+
+    yield queue
+
+    await queue.stop()
+    await queue.clear_queue()
+
+@pytest.mark.asyncio
+async def test_task_processing(test_queue):
+    task_id = await test_queue.enqueue("test", {"data": "value"})
+    await asyncio.sleep(0.3)
+
+    status = await test_queue.get_task_status(task_id)
+    assert status["status"] == TaskStatus.COMPLETED
+    assert status["result"]["result"] == "processed_value"
+```
+
+### Common Issues & Solutions
+
+**Issue 1: Tasks Not Being Processed**
+```python
+# Problem: Workers not started
+await task_queue.start()  # Must start workers
+
+# Problem: No handler registered
+task_queue.register_handler("my_task", my_handler)
+```
+
+**Issue 2: Memory Leak with Long-Running Queue**
+```python
+# Solution: Periodically clean old tasks
+async def periodic_cleanup():
+    while True:
+        await asyncio.sleep(86400)  # Daily
+        await task_queue.cleanup_old_tasks(days=7)
+
+asyncio.create_task(periodic_cleanup())
+```
+
+**Issue 3: Task Timeout**
+```python
+# Wrap handler with timeout
+async def handler_with_timeout(payload):
+    try:
+        return await asyncio.wait_for(
+            actual_handler(payload),
+            timeout=60
+        )
+    except asyncio.TimeoutError:
+        raise Exception("Task timeout after 60s")
+```
+
+**Issue 4: Handling Large Results**
+```python
+# Problem: Result too large for cache
+async def handler_with_large_result(payload):
+    result = generate_large_result()
+
+    if len(json.dumps(result)) > 1_000_000:  # 1MB
+        # Save to file instead
+        file_path = f"data/results/{payload['task_id']}.json"
+        with open(file_path, "w") as f:
+            json.dump(result, f)
+        return {"file": file_path}
+
+    return result
+```
+
+**Issue 5: Worker Crashes**
+```python
+# Workers auto-restart on error
+# Check worker health:
+stats = await task_queue.get_queue_stats()
+if stats["active_workers"] < stats["worker_count"]:
+    logger.warning("Some workers may have crashed")
+    # Restart queue
+    await task_queue.stop()
+    await task_queue.start()
+```
+
+### Performance Optimization
+
+**1. Batch Enqueue for Efficiency**:
+```python
+# Slow: 100 individual enqueue() calls
+for i in range(100):
+    await task_queue.enqueue("task", {"n": i})
+
+# Fast: Single batch enqueue
+tasks = [{"type": "task", "payload": {"n": i}} for i in range(100)]
+await task_queue.enqueue_batch(tasks)
+```
+
+**2. Tune Worker Count**:
+```python
+# In .env file
+TASK_QUEUE_MAX_WORKERS=5  # Increase for high throughput
+
+# For I/O-bound tasks: 5-10 workers
+# For CPU-bound tasks: 2-4 workers
+```
+
+**3. Use Priority Wisely**:
+```python
+# High priority for user-facing tasks
+await task_queue.enqueue("user_request", payload, priority=TaskPriority.HIGH)
+
+# Low priority for background maintenance
+await task_queue.enqueue("cleanup", payload, priority=TaskPriority.BACKGROUND)
+```
+
+**4. Monitor Queue Depth**:
+```python
+stats = await task_queue.get_queue_stats()
+pending_count = stats["status_counts"]["pending"]
+
+if pending_count > 1000:
+    logger.warning(f"Queue backlog: {pending_count} pending tasks")
+    # Consider scaling up workers
+```
+
+### Application Startup Pattern
+
+```python
+from src.task_queue import task_queue, register_default_handlers
+from src.database import init_db
+
+async def startup():
+    """Application startup"""
+    # Initialize database
+    await init_db()
+
+    # Register task handlers
+    register_default_handlers()
+
+    # Register custom handlers
+    task_queue.register_handler("custom", custom_handler)
+
+    # Start task queue workers
+    await task_queue.start()
+
+    print(f"Task queue started with {task_queue.worker_count} workers")
+
+async def shutdown():
+    """Application shutdown"""
+    # Stop task queue gracefully
+    await task_queue.stop()
+    print("Task queue stopped")
+
+# Usage with FastAPI
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.on_event("startup")
+async def on_startup():
+    await startup()
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await shutdown()
+```
+
 ## Critical Implementation Details
 
 ### DatabaseOperations Static Methods
