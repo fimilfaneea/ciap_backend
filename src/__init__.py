@@ -1,6 +1,6 @@
 """CIAP - Competitive Intelligence Automation Platform"""
 
-__version__ = "0.8.0"  # Module 8 complete
+__version__ = "0.9.0"  # Module 9 complete - Export System
 
 # Expose top-level imports
 from . import database
@@ -11,6 +11,7 @@ from . import scrapers
 from . import processors
 from . import analyzers
 from . import api
+from . import services
 
 __all__ = [
     "database",
@@ -20,5 +21,6 @@ __all__ = [
     "scrapers",
     "processors",
     "analyzers",
-    "api"
+    "api",
+    "services"
 ]
