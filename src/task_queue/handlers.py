@@ -14,9 +14,8 @@ async def scrape_handler(payload: Dict[str, Any]) -> Dict:
     """
     Handle scraping tasks
 
-    TODO: Integration with Module 5 (Web Scraper)
-    This is a placeholder. Real implementation will be added when Module 5 is complete.
-    Will integrate with scraper_manager.scrape() when available.
+    Integration with Module 5 (Web Scraper)
+    Uses scraper_manager to scrape from multiple sources and save to database.
 
     Args:
         payload: Task data with query and sources
@@ -24,6 +23,7 @@ async def scrape_handler(payload: Dict[str, Any]) -> Dict:
             - query: str - Search query
             - sources: List[str] - List of sources (e.g., ["google", "bing"])
             - search_id: int - Optional search ID for result linking
+            - max_results_per_source: int - Optional max results per source
 
     Returns:
         Scraping results dictionary
@@ -35,44 +35,56 @@ async def scrape_handler(payload: Dict[str, Any]) -> Dict:
             "search_id": 123
         })
     """
+    from ..scrapers.manager import scraper_manager
+
     query = payload.get("query", "")
-    sources = payload.get("sources", ["google"])
+    sources = payload.get("sources", ["google", "bing"])
     search_id = payload.get("search_id")
+    max_results_per_source = payload.get("max_results_per_source", 50)
 
-    logger.warning(f"Using placeholder scrape_handler for query '{query}'")
-    logger.info(f"Scraping '{query}' from {sources} (search_id={search_id})")
+    if not query:
+        raise ValueError("Query is required for scraping task")
 
-    # TODO: Replace with actual scraper implementation
-    # from src.scrapers.manager import scraper_manager
-    # results = await scraper_manager.scrape(query=query, source=source)
+    logger.info(
+        f"Scraping '{query}' from {sources} "
+        f"(search_id={search_id}, max_results={max_results_per_source})"
+    )
 
-    # Simulate scraping work
-    await asyncio.sleep(0.1)
+    try:
+        if search_id:
+            # Use scrape_and_save if search_id provided (saves to database)
+            result = await scraper_manager.scrape_and_save(
+                search_id=search_id,
+                query=query,
+                sources=sources,
+                max_results_per_source=max_results_per_source
+            )
+        else:
+            # Use scrape only (returns results without saving)
+            results = await scraper_manager.scrape(
+                query=query,
+                sources=sources,
+                max_results_per_source=max_results_per_source
+            )
+            result = {
+                "status": "success",
+                "query": query,
+                "sources": list(results.keys()),
+                "results": results,
+                "total_results": sum(len(r) for r in results.values())
+            }
 
-    # Return mock results
-    results = {}
-    for source in sources:
-        results[source] = {
-            "status": "success",
-            "count": 10,
-            "results": [
-                {
-                    "title": f"Mock Result {i} for {query}",
-                    "url": f"https://example.com/result{i}",
-                    "snippet": f"This is a mock snippet for {query} from {source}"
-                }
-                for i in range(1, 11)
-            ]
+        logger.info(f"Scrape handler completed for '{query}': {result.get('total_results', 0)} results")
+        return result
+
+    except Exception as e:
+        logger.error(f"Scrape handler failed for '{query}': {e}")
+        return {
+            "status": "failed",
+            "query": query,
+            "sources": sources,
+            "error": str(e)
         }
-
-    logger.info(f"Placeholder scrape_handler completed for '{query}'")
-    return {
-        "status": "success",
-        "query": query,
-        "sources": sources,
-        "results": results,
-        "mock": True  # Flag to indicate this is mock data
-    }
 
 
 async def analyze_handler(payload: Dict[str, Any]) -> Dict:
