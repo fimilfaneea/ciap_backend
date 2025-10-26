@@ -220,6 +220,24 @@ class Settings(BaseSettings):
         description="Maximum rows in export files"
     )
 
+    # Scheduler
+    SCHEDULER_TIMEZONE: str = Field(
+        default="UTC",
+        description="Scheduler timezone"
+    )
+    SCHEDULER_MAX_INSTANCES: int = Field(
+        default=3,
+        ge=1,
+        le=10,
+        description="Max concurrent instances per job"
+    )
+    SCHEDULER_MISFIRE_GRACE_TIME: int = Field(
+        default=30,
+        ge=0,
+        le=300,
+        description="Grace time for misfired jobs in seconds"
+    )
+
     # Paths
     DATA_DIR: str = Field(
         default="data",

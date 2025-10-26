@@ -1,6 +1,6 @@
 """CIAP - Competitive Intelligence Automation Platform"""
 
-__version__ = "0.9.0"  # Module 9 complete - Export System
+__version__ = "1.0.0"  # All 10 modules complete - Production ready!
 
 # Expose top-level imports
 from . import database

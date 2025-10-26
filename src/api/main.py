@@ -107,6 +107,12 @@ async def lifespan(app: FastAPI):
         await cache.initialize()
         logger.info("Cache initialized successfully")
 
+        # Start scheduler
+        logger.info("Starting scheduler...")
+        from ..services import scheduler as scheduler_service
+        await scheduler_service.start()
+        logger.info(f"Scheduler started with {len(scheduler_service.list_jobs())} jobs")
+
         logger.info("CIAP API started successfully")
 
     except Exception as e:
@@ -123,6 +129,12 @@ async def lifespan(app: FastAPI):
         logger.info("Stopping task queue...")
         await task_queue.stop()
         logger.info("Task queue stopped")
+
+        # Stop scheduler
+        logger.info("Stopping scheduler...")
+        from ..services import scheduler as scheduler_service
+        await scheduler_service.stop()
+        logger.info("Scheduler stopped")
 
         # Close database
         logger.info("Closing database connections...")
@@ -147,7 +159,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="CIAP - Competitive Intelligence Automation Platform",
     description="Open-source competitive intelligence platform for SMEs with automated data collection and LLM analysis",
-    version="0.9.0",
+    version="1.0.0",
     lifespan=lifespan,
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -463,7 +475,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 # ============================================================
 
 # Import routers
-from .routes import search, tasks, analysis, export
+from .routes import search, tasks, analysis, export, scheduler
 
 # Register routers
 app.include_router(
@@ -488,4 +500,10 @@ app.include_router(
     export.router,
     prefix=f"{settings.API_PREFIX}/export",
     tags=["export"]
+)
+
+app.include_router(
+    scheduler.router,
+    prefix=f"{settings.API_PREFIX}/scheduler",
+    tags=["scheduler"]
 )
