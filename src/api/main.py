@@ -75,11 +75,13 @@ async def lifespan(app: FastAPI):
 
     Startup:
         - Initialize database
+        - Initialize Scrapy framework
         - Start task queue with handlers
         - Initialize cache
 
     Shutdown:
         - Stop task queue
+        - Shutdown Scrapy framework
         - Close database connections
         - Close cache
     """
@@ -91,6 +93,12 @@ async def lifespan(app: FastAPI):
         logger.info("Initializing database...")
         await db_manager.initialize()
         logger.info("Database initialized successfully")
+
+        # Initialize Scrapy framework
+        logger.info("Initializing Scrapy framework...")
+        from ..scrapers.scrapy_runner import initialize_scrapy
+        initialize_scrapy()
+        logger.info("Scrapy framework initialized with crochet")
 
         # Register task handlers
         logger.info("Registering task handlers...")
@@ -135,6 +143,12 @@ async def lifespan(app: FastAPI):
         from ..services import scheduler as scheduler_service
         await scheduler_service.stop()
         logger.info("Scheduler stopped")
+
+        # Shutdown Scrapy framework
+        logger.info("Shutting down Scrapy framework...")
+        from ..scrapers.scrapy_runner import shutdown_scrapy
+        shutdown_scrapy()
+        logger.info("Scrapy framework shut down")
 
         # Close database
         logger.info("Closing database connections...")

@@ -23,7 +23,7 @@ class Search(Base):
     query = Column(String(500), nullable=False)
     search_type = Column(String(50), default="competitor")  # competitor, market, product
     status = Column(String(50), default="pending")  # pending, processing, completed, failed
-    sources = Column(JSON)  # ["google", "bing"]
+    sources = Column(JSON, nullable=False, default=list)  # ["google", "bing"]
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime, nullable=True)

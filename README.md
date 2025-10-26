@@ -25,36 +25,36 @@ CIAP automates the collection and analysis of competitive intelligence data usin
 ### Installation
 
 1. Clone the repository:
-```bash
+```powershell
 git clone https://github.com/fimilfaneea/ciap_backend.git
 cd ciap_backend
 ```
 
 2. Create a virtual environment:
-```bash
+```powershell
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+venv\Scripts\activate
 ```
 
 3. Install dependencies:
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
 4. Set up environment variables:
-```bash
-cp .env.example .env
+```powershell
+Copy-Item .env.example .env
 # Edit .env file with your API keys
 ```
 
 5. Initialize the database:
-```bash
-python database.py
+```powershell
+python -m src.database.manager
 ```
 
 6. Run the application:
-```bash
-python main.py
+```powershell
+uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 7. Open your browser and navigate to:

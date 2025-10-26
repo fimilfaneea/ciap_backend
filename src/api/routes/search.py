@@ -64,7 +64,7 @@ class SearchDetailResponse(BaseModel):
     id: int
     query: str
     status: str
-    sources: List[str]
+    sources: List[str] = Field(default_factory=list)
     created_at: datetime
     completed_at: Optional[datetime] = None
     error_message: Optional[str] = None
@@ -218,7 +218,7 @@ async def get_search(
                 "id": search.id,
                 "query": search.query,
                 "status": search.status,
-                "sources": search.sources,
+                "sources": search.sources if search.sources is not None else [],
                 "created_at": search.created_at,
                 "completed_at": search.completed_at,
                 "error_message": search.error_message
@@ -320,7 +320,7 @@ async def list_searches(
                     id=search.id,
                     query=search.query,
                     status=search.status,
-                    sources=search.sources,
+                    sources=search.sources if search.sources is not None else [],
                     created_at=search.created_at,
                     completed_at=search.completed_at,
                     error_message=search.error_message,

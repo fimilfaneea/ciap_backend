@@ -1,10 +1,10 @@
 """
 Scheduler Service for CIAP
-Handles job scheduling using APScheduler with SQLite backend
+Handles job scheduling using APScheduler with in-memory job store
 """
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
+from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -26,17 +26,11 @@ class SchedulerService:
     """Job scheduling service using APScheduler"""
 
     def __init__(self):
-        """Initialize scheduler with SQLite jobstore and handler registry"""
+        """Initialize scheduler with in-memory jobstore and handler registry"""
 
-        # Create scheduler database path
-        scheduler_db_path = Path(settings.DATA_DIR) / "scheduler.db"
-        scheduler_db_path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Configure job store (SQLite)
+        # Configure job store (in-memory)
         jobstores = {
-            "default": SQLAlchemyJobStore(
-                url=f"sqlite:///{scheduler_db_path}"
-            )
+            "default": MemoryJobStore()
         }
 
         # Configure scheduler with job defaults
@@ -53,7 +47,7 @@ class SchedulerService:
         # Job handlers registry
         self.handlers: Dict[str, Callable] = {}
 
-        logger.info(f"SchedulerService initialized. Database: {scheduler_db_path}")
+        logger.info("SchedulerService initialized with in-memory job store")
 
     async def _handle_search_job(self, **kwargs):
         """

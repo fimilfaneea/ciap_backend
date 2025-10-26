@@ -1,20 +1,20 @@
 """
 Base Scraper for CIAP Web Scraping System
 Provides abstract base class and common utilities for all scrapers
+
+Updated to use Scrapy framework instead of httpx/BeautifulSoup
 """
 
 import asyncio
 import random
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Type
 import logging
-from urllib.parse import urljoin, urlparse, quote_plus
+from urllib.parse import urljoin, urlparse
 
-import httpx
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 from sqlalchemy import select
+from scrapy import Spider
 
 from ..config import settings
 from ..database import db_manager, RateLimit
@@ -41,74 +41,47 @@ class BaseScraper(ABC):
     """
     Abstract base class for all scrapers
 
+    Updated to use Scrapy backend with Playwright for JavaScript rendering.
+
     Provides common functionality:
-    - HTTP request handling with retry logic
+    - Scrapy spider execution via async wrapper
     - Rate limiting enforcement
-    - User agent rotation
-    - HTML parsing
     - Result validation and cleaning
     - Statistics tracking
+    - Caching integration
     """
 
     def __init__(self):
         """Initialize base scraper"""
         self.name = self.__class__.__name__
-        self.user_agent = UserAgent()
 
-        # HTTP client configuration
+        # Scraper configuration
         self.timeout = settings.SCRAPER_TIMEOUT
-        self.retry_count = settings.SCRAPER_RETRY_COUNT
         self.rate_limit_delay = settings.SCRAPER_RATE_LIMIT_DELAY
-
-        # Headers pool
-        self.headers_pool = self._create_headers_pool()
 
         # Statistics
         self.stats = {
-            "requests_made": 0,
-            "requests_failed": 0,
+            "spiders_run": 0,
+            "spiders_failed": 0,
             "results_scraped": 0
         }
 
-    def _create_headers_pool(self) -> List[Dict[str, str]]:
+    @abstractmethod
+    def get_spider_class(self) -> Type[Spider]:
         """
-        Create pool of headers for rotation
+        Get Scrapy spider class for this scraper
+
+        Subclasses must implement this to return their Spider class.
 
         Returns:
-            List of header dictionaries
+            Scrapy Spider class
+
+        Example:
+            def get_spider_class(self):
+                from .spiders import GoogleSpider
+                return GoogleSpider
         """
-        user_agents = settings.SCRAPER_USER_AGENTS or [
-            self.user_agent.chrome,
-            self.user_agent.firefox,
-            self.user_agent.safari
-        ]
-
-        headers_list = []
-        for ua in user_agents:
-            headers_list.append({
-                "User-Agent": ua,
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Accept-Encoding": "gzip, deflate, br",
-                "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
-                "Sec-Fetch-Dest": "document",
-                "Sec-Fetch-Mode": "navigate",
-                "Sec-Fetch-Site": "none",
-                "Cache-Control": "max-age=0"
-            })
-
-        return headers_list
-
-    def get_random_headers(self) -> Dict[str, str]:
-        """
-        Get random headers from pool
-
-        Returns:
-            Random header dictionary
-        """
-        return random.choice(self.headers_pool).copy()
+        pass
 
     async def check_rate_limit(self) -> bool:
         """
@@ -154,105 +127,49 @@ class BaseScraper(ABC):
 
             return True
 
-    async def make_request(
-        self,
-        url: str,
-        method: str = "GET",
-        **kwargs
-    ) -> httpx.Response:
+    async def _run_scrapy_spider(self, **spider_kwargs) -> List[Dict[str, Any]]:
         """
-        Make HTTP request with retry logic
-
-        Implements exponential backoff retry strategy and rate limiting.
+        Run Scrapy spider and return results
 
         Args:
-            url: URL to request
-            method: HTTP method (GET, POST, etc.)
-            **kwargs: Additional request parameters
+            **spider_kwargs: Arguments to pass to spider
 
         Returns:
-            HTTP response
+            List of scraped results
 
         Raises:
-            ScraperException: On request failure after all retries
-            BlockedException: If blocked by target (403 status)
-            RateLimitException: If rate limited by target (429 status)
+            ScraperException: If spider fails
         """
-        # Check rate limit
+        # Check rate limit before running spider
         await self.check_rate_limit()
 
-        # Get random headers
-        headers = kwargs.pop("headers", {})
-        default_headers = self.get_random_headers()
-        default_headers.update(headers)
+        try:
+            # Import here to avoid circular imports
+            from .scrapy_runner import run_spider
 
-        last_exception = None
+            # Get spider class
+            spider_class = self.get_spider_class()
 
-        for attempt in range(self.retry_count):
-            try:
-                async with httpx.AsyncClient(
-                    timeout=self.timeout,
-                    follow_redirects=True,
-                    verify=False  # Skip SSL verification
-                ) as client:
-                    self.stats["requests_made"] += 1
+            # Run spider with timeout
+            results = await run_spider(
+                spider_class,
+                timeout=self.timeout * 3,  # Triple timeout for full scraping
+                **spider_kwargs
+            )
 
-                    response = await client.request(
-                        method,
-                        url,
-                        headers=default_headers,
-                        **kwargs
-                    )
+            self.stats["spiders_run"] += 1
+            self.stats["results_scraped"] += len(results)
 
-                    # Check for blocking
-                    if response.status_code == 403:
-                        raise BlockedException(
-                            f"Blocked by {urlparse(url).netloc}"
-                        )
+            logger.info(
+                f"{self.name}: Spider completed with {len(results)} results"
+            )
 
-                    if response.status_code == 429:
-                        raise RateLimitException(
-                            f"Rate limited by {urlparse(url).netloc}"
-                        )
+            return results
 
-                    response.raise_for_status()
-
-                    return response
-
-            except (httpx.TimeoutException, httpx.ConnectError) as e:
-                last_exception = e
-                wait_time = 2 ** attempt  # Exponential backoff
-                logger.warning(
-                    f"{self.name}: Attempt {attempt + 1} failed, "
-                    f"waiting {wait_time}s - {e}"
-                )
-                await asyncio.sleep(wait_time)
-
-            except (BlockedException, RateLimitException):
-                # Don't retry on blocking or rate limiting
-                self.stats["requests_failed"] += 1
-                raise
-
-            except Exception as e:
-                self.stats["requests_failed"] += 1
-                raise ScraperException(f"Request failed: {e}")
-
-        self.stats["requests_failed"] += 1
-        raise ScraperException(
-            f"Failed after {self.retry_count} attempts: {last_exception}"
-        )
-
-    def parse_html(self, html: str) -> BeautifulSoup:
-        """
-        Parse HTML content
-
-        Args:
-            html: HTML string
-
-        Returns:
-            BeautifulSoup object
-        """
-        return BeautifulSoup(html, "lxml")
+        except Exception as e:
+            self.stats["spiders_failed"] += 1
+            logger.error(f"{self.name}: Spider failed - {e}")
+            raise ScraperException(f"Scrapy spider failed: {e}")
 
     @abstractmethod
     async def scrape(
@@ -262,37 +179,27 @@ class BaseScraper(ABC):
         **kwargs
     ) -> List[Dict[str, Any]]:
         """
-        Scrape search results
+        Scrape search results using Scrapy spider
 
-        This method must be implemented by subclasses.
+        Subclasses should implement this by calling _run_scrapy_spider()
+        with appropriate spider arguments.
 
         Args:
             query: Search query
             max_results: Maximum results to return
-            **kwargs: Additional parameters
+            **kwargs: Additional parameters (lang, region, date_range, etc.)
 
         Returns:
             List of search results
-        """
-        pass
 
-    @abstractmethod
-    def parse_results(
-        self,
-        soup: BeautifulSoup,
-        max_results: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Parse search results from HTML
-
-        This method must be implemented by subclasses.
-
-        Args:
-            soup: BeautifulSoup object
-            max_results: Maximum results to extract
-
-        Returns:
-            List of parsed results
+        Example:
+            async def scrape(self, query, max_results=100, **kwargs):
+                results = await self._run_scrapy_spider(
+                    query=query,
+                    max_results=max_results,
+                    **kwargs
+                )
+                return await self.validate_results(results)
         """
         pass
 
@@ -400,8 +307,8 @@ class BaseScraper(ABC):
             "scraper": self.name,
             **self.stats,
             "success_rate": (
-                (self.stats["requests_made"] - self.stats["requests_failed"])
-                / self.stats["requests_made"] * 100
-                if self.stats["requests_made"] > 0 else 0
+                (self.stats["spiders_run"] - self.stats["spiders_failed"])
+                / self.stats["spiders_run"] * 100
+                if self.stats["spiders_run"] > 0 else 0
             )
         }

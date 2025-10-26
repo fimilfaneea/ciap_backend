@@ -119,6 +119,50 @@ class Settings(BaseSettings):
         description="Maximum Bing results per search"
     )
 
+    # Scrapy Framework
+    SCRAPY_ENABLED: bool = Field(
+        default=True,
+        description="Use Scrapy framework for web scraping"
+    )
+    SCRAPY_CONCURRENT_REQUESTS: int = Field(
+        default=16,
+        ge=1,
+        le=32,
+        description="Maximum concurrent requests for Scrapy"
+    )
+    SCRAPY_DOWNLOAD_DELAY: float = Field(
+        default=2.0,
+        ge=0.5,
+        le=10.0,
+        description="Delay between consecutive requests to same domain"
+    )
+    SCRAPY_PLAYWRIGHT_ENABLED: bool = Field(
+        default=True,
+        description="Enable Playwright for JavaScript rendering"
+    )
+    SCRAPY_PLAYWRIGHT_BROWSER: str = Field(
+        default="chromium",
+        description="Playwright browser type (chromium, firefox, webkit)"
+    )
+    SCRAPY_PLAYWRIGHT_HEADLESS: bool = Field(
+        default=True,
+        description="Run Playwright browser in headless mode"
+    )
+    SCRAPY_LOG_LEVEL: str = Field(
+        default="WARNING",
+        description="Scrapy logging level (DEBUG, INFO, WARNING, ERROR)"
+    )
+    SCRAPY_AUTOTHROTTLE_ENABLED: bool = Field(
+        default=True,
+        description="Enable auto-throttling to adapt crawl speed"
+    )
+    SCRAPY_AUTOTHROTTLE_TARGET_CONCURRENCY: float = Field(
+        default=1.0,
+        ge=0.5,
+        le=10.0,
+        description="Average number of concurrent requests per domain"
+    )
+
     # Cache
     CACHE_TTL_SECONDS: int = Field(
         default=3600,
