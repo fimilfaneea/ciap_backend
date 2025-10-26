@@ -3,7 +3,7 @@ System Routes for CIAP API
 Health checks, statistics, and system information endpoints
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from typing import Dict, Any
 import time
 import logging
@@ -75,21 +75,44 @@ async def health_check():
 
 
 @router.get("/stats", response_model=Dict[str, Any])
-async def get_system_stats():
+async def get_system_stats(response: Response):
     """
     Get system-wide statistics
 
+    **⚠️ DEPRECATION NOTICE:** This endpoint returns all system statistics.
+    For task-specific statistics, use GET /api/v1/tasks/stats instead.
+
     Returns statistics for:
-    - Task queue (pending, processing, completed, failed tasks)
+    - Task queue (pending, processing, completed, failed tasks) - **Use /api/v1/tasks/stats**
     - Cache (hits, misses, size)
     - Database (table counts, size)
 
+    **Migration Guide:**
+    - For task queue stats: Use `GET /api/v1/tasks/stats`
+    - For cache stats only: Continue using this endpoint, filter client-side
+    - For database stats only: Continue using this endpoint, filter client-side
+
+    **Timeline:**
+    - Deprecated: 2025-10-26
+    - Sunset: TBD (will be announced with 6 months notice)
+
     Returns:
         Dictionary with statistics from all subsystems
+
+    Response Headers:
+        - Deprecation: RFC 8594 deprecation header
+        - Link: Points to replacement endpoint for task stats
+        - Sunset: (Future) Date when endpoint will be removed
     """
     from ...database import db_manager
     from ...task_queue.manager import task_queue
     from ...cache.manager import cache
+
+    # Add deprecation headers (RFC 8594)
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/v1/tasks/stats>; rel="alternate"; type="application/json"; title="Use this endpoint for task queue statistics"'
+    response.headers["X-API-Deprecation-Info"] = "This endpoint returns all system stats. Use /api/v1/tasks/stats for task-specific data."
+    response.headers["X-API-Deprecation-Date"] = "2025-10-26"
 
     stats = {}
 

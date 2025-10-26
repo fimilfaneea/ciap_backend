@@ -54,13 +54,41 @@ python -m src.database.manager
 
 6. Run the application:
 ```powershell
-uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+# Development mode (with auto-reload)
+python run_dev.py
+
+# OR for production mode
+python run.py
 ```
 
 7. Open your browser and navigate to:
 ```
 http://localhost:8000
 ```
+
+## 🎛️ Startup Options
+
+**Development Mode** (recommended for development):
+```powershell
+python run_dev.py
+```
+- Auto-reload on code changes
+- Debug logging enabled
+- Monitors `src/` directory for changes
+- Runs on `127.0.0.1:8000`
+
+**Production Mode**:
+```powershell
+python run.py
+```
+- No auto-reload (better performance)
+- Info-level logging
+- Single worker process
+- Runs on `0.0.0.0:8000`
+
+**Why use these startup scripts?**
+
+The `run_dev.py` and `run.py` scripts ensure the correct Twisted reactor (`AsyncioSelectorReactor`) is installed before FastAPI starts. This is **required** for Scrapy-Playwright integration to work properly. Starting the server directly with `uvicorn` will cause reactor mismatch errors.
 
 ## 🔧 Configuration
 
@@ -97,7 +125,7 @@ ciap/
 
 - **Backend**: Python, FastAPI
 - **Database**: SQLite (PostgreSQL ready)
-- **Scraping**: BeautifulSoup, Requests
+- **Scraping**: Scrapy, Playwright (for JavaScript-rendered pages)
 - **AI/ML**: OpenAI API, Anthropic Claude
 - **Frontend**: HTML5, JavaScript, CSS3
 

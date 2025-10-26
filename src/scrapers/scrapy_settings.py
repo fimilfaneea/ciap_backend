@@ -69,9 +69,8 @@ if app_settings.SCRAPY_PLAYWRIGHT_ENABLED:
         "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
     }
 
-    DOWNLOADER_MIDDLEWARES.update({
-        "scrapy_playwright.middleware.ScrapyPlaywrightDownloadMiddleware": 585,
-    })
+    # Note: ScrapyPlaywrightDownloadMiddleware is optional and not available in all versions
+    # Only the download handler is required for Playwright to work
 
     PLAYWRIGHT_BROWSER_TYPE = app_settings.SCRAPY_PLAYWRIGHT_BROWSER
     PLAYWRIGHT_LAUNCH_OPTIONS = {
@@ -129,7 +128,6 @@ LOG_DATEFORMAT = "%Y-%m-%d %H:%M:%S"
 
 # Request settings
 REQUEST_FINGERPRINTER_IMPLEMENTATION = "2.7"
-# TWISTED_REACTOR - Managed by crochet, do not set here
 FEED_EXPORT_ENCODING = "utf-8"
 
 # Closespider settings (safety limits)

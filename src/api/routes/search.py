@@ -179,28 +179,162 @@ async def create_search(
         )
 
 
-@router.get("/{search_id}", response_model=dict)
-async def get_search(
+@router.get("/{search_id}/results", response_model=PaginatedResponse[SearchResultItem])
+async def get_search_results(
     search_id: int,
-    include_results: bool = Query(True, description="Include search results in response"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Number of results per page"),
+    source: Optional[str] = Query(None, description="Filter by source (google, bing)"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Get search details and optionally results
+    Get paginated search results for a specific search
+
+    This endpoint returns ONLY the search results with pagination support,
+    without the search metadata. For search details, use GET /api/v1/search/{search_id}.
 
     Args:
         search_id: Search ID
-        include_results: Whether to include search results
+        page: Page number (1-indexed)
+        per_page: Number of results per page (max 100)
+        source: Optional filter by source
         db: Database session
 
     Returns:
-        Search details with results
+        Paginated list of search results with standard pagination metadata
 
     Raises:
         HTTPException: If search not found
     """
     try:
-        # Get search
+        # Verify search exists
+        search = await DatabaseOperations.get_search(db, search_id)
+        if not search:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Search {search_id} not found"
+            )
+
+        # Get all results for this search
+        all_results = await DatabaseOperations.get_search_results(db, search_id)
+
+        # Filter by source if specified
+        if source:
+            all_results = [r for r in all_results if r.source == source]
+
+        # Calculate pagination
+        total = len(all_results)
+        total_pages = (total + per_page - 1) // per_page
+        skip = (page - 1) * per_page
+
+        # Slice results for current page
+        paginated_results = all_results[skip:skip + per_page]
+
+        # Convert to response format
+        items = [
+            SearchResultItem(
+                title=r.title,
+                snippet=r.snippet,
+                url=r.url,
+                source=r.source,
+                position=r.position
+            )
+            for r in paginated_results
+        ]
+
+        # Return paginated response with standard fields
+        return PaginatedResponse(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            total_pages=total_pages,
+            has_next=page < total_pages,
+            has_prev=page > 1
+        )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Failed to get search results for search {search_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve search results: {str(e)}"
+        )
+
+
+@router.get("/{search_id}", response_model=dict)
+async def get_search(
+    search_id: int,
+    include_results: bool = Query(True, description="Include search results in response"),
+    results_only: bool = Query(False, description="Return only results (paginated), not search metadata"),
+    page: int = Query(1, ge=1, description="Page number when results_only=True"),
+    per_page: int = Query(20, ge=1, le=100, description="Results per page when results_only=True"),
+    source: Optional[str] = Query(None, description="Filter results by source when results_only=True"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get search details and optionally results
+
+    **Note**: For paginated results only, use GET /api/v1/search/{search_id}/results instead.
+
+    Args:
+        search_id: Search ID
+        include_results: Whether to include search results (default: True)
+        results_only: Return only results with pagination, not search metadata (default: False)
+        page: Page number when results_only=True
+        per_page: Results per page when results_only=True
+        source: Filter by source when results_only=True
+        db: Database session
+
+    Returns:
+        Search details with results, or paginated results if results_only=True
+
+    Raises:
+        HTTPException: If search not found
+    """
+    try:
+        # If results_only is True, delegate to the results endpoint behavior
+        if results_only:
+            # Get all results for this search
+            all_results = await DatabaseOperations.get_search_results(db, search_id)
+
+            # Filter by source if specified
+            if source:
+                all_results = [r for r in all_results if r.source == source]
+
+            # Calculate pagination
+            total = len(all_results)
+            total_pages = (total + per_page - 1) // per_page
+            skip = (page - 1) * per_page
+
+            # Slice results for current page
+            paginated_results = all_results[skip:skip + per_page]
+
+            # Convert to response format
+            items = [
+                {
+                    "title": r.title,
+                    "snippet": r.snippet,
+                    "url": r.url,
+                    "source": r.source,
+                    "position": r.position
+                }
+                for r in paginated_results
+            ]
+
+            return {
+                "items": items,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages,
+                "has_next": page < total_pages,
+                "has_prev": page > 1
+            }
+
+        # Original behavior: Get search details
         search = await DatabaseOperations.get_search(db, search_id)
 
         if not search:

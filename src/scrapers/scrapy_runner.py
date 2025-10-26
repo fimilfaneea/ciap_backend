@@ -27,6 +27,13 @@ def initialize_scrapy():
 
     Must be called once during application startup before running any spiders.
     Sets up the Twisted reactor in a separate thread using crochet.
+
+    Important: AsyncioSelectorReactor should be installed BEFORE this function
+    is called (via run.py or run_dev.py startup script). This function verifies
+    the correct reactor is installed and initializes Scrapy with it.
+
+    Note: If reactor is not AsyncioSelectorReactor, Scrapy-Playwright will fail.
+    Always start the server using run.py or run_dev.py to ensure correct reactor.
     """
     global _crochet_initialized, _crawler_runner
 
@@ -35,7 +42,23 @@ def initialize_scrapy():
         return
 
     try:
-        # Configure Scrapy logging
+        # STEP 1: Verify which reactor is installed
+        from twisted.internet import reactor
+        reactor_name = reactor.__class__.__name__
+        reactor_module = reactor.__class__.__module__
+        reactor_type = f"{reactor_module}.{reactor_name}"
+
+        logger.info(f"Using Twisted reactor: {reactor_type}")
+
+        # Warn if not AsyncioSelectorReactor (Playwright won't work)
+        if 'asyncioreactor' not in reactor_type.lower():
+            logger.warning(
+                f"Reactor type is {reactor_name}, not AsyncioSelectorReactor. "
+                f"Scrapy-Playwright may not work correctly. "
+                f"Ensure run.py or run_dev.py is used to start the server."
+            )
+
+        # STEP 2: Configure Scrapy logging
         configure_logging(
             settings={
                 "LOG_LEVEL": settings.SCRAPY_LOG_LEVEL,
@@ -43,10 +66,10 @@ def initialize_scrapy():
             }
         )
 
-        # Setup crochet - this starts Twisted reactor in a thread
+        # STEP 3: Setup crochet - uses existing reactor
         crochet.setup()
 
-        # Create CrawlerRunner with our custom settings
+        # STEP 4: Create CrawlerRunner with our custom settings
         _crawler_runner = CrawlerRunner(settings=scrapy_settings.__dict__)
 
         _crochet_initialized = True

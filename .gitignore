@@ -100,6 +100,7 @@ credentials.json
 Thumbs.db
 .DS_Store
 desktop.ini
+nul
 
 # Backup files
 *.bak

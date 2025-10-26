@@ -3,7 +3,7 @@ Task Management Routes for CIAP API
 Endpoints for task queue operations
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -20,6 +20,63 @@ router = APIRouter()
 # ============================================================
 # Pydantic Models
 # ============================================================
+
+class TaskStatsResponse(BaseModel):
+    """Response model for task queue statistics"""
+    status_counts: Dict[str, int] = Field(
+        ...,
+        description="Count of tasks by status (pending, processing, completed, failed, etc.)"
+    )
+    type_counts: Dict[str, int] = Field(
+        ...,
+        description="Count of tasks by type (scrape, analyze, export, batch)"
+    )
+    avg_wait_time_seconds: float = Field(
+        ...,
+        description="Average wait time for pending tasks in seconds"
+    )
+    worker_count: int = Field(
+        ...,
+        description="Total number of worker threads"
+    )
+    active_workers: int = Field(
+        ...,
+        description="Number of currently active workers"
+    )
+    tasks_processed: int = Field(
+        0,
+        description="Total tasks processed since startup"
+    )
+    tasks_failed: int = Field(
+        0,
+        description="Total tasks failed since startup"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status_counts": {
+                    "pending": 5,
+                    "processing": 2,
+                    "completed": 120,
+                    "failed": 3,
+                    "dead": 0,
+                    "cancelled": 1
+                },
+                "type_counts": {
+                    "scrape": 80,
+                    "analyze": 40,
+                    "export": 10,
+                    "batch": 1
+                },
+                "avg_wait_time_seconds": 2.5,
+                "worker_count": 3,
+                "active_workers": 2,
+                "tasks_processed": 123,
+                "tasks_failed": 3
+            }
+        }
+
 
 class TaskRequest(BaseModel):
     """Request model for creating a new task"""
@@ -118,6 +175,51 @@ async def enqueue_task(request: TaskRequest):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to enqueue task: {str(e)}"
+        )
+
+
+@router.get("/stats", response_model=TaskStatsResponse)
+async def get_task_stats():
+    """
+    Get task queue statistics
+
+    Returns comprehensive statistics about the task queue including:
+    - Status counts (pending, processing, completed, failed, dead, cancelled)
+    - Type counts (scrape, analyze, export, batch)
+    - Average wait time for pending tasks
+    - Worker information (total workers, active workers)
+    - Performance metrics (tasks processed, tasks failed)
+
+    This endpoint provides task-specific statistics. For system-wide statistics
+    including database and cache metrics, use GET /api/v1/stats (deprecated,
+    use this endpoint for task-specific data).
+
+    Returns:
+        TaskStatsResponse: Comprehensive task queue statistics
+
+    Raises:
+        HTTPException: If statistics cannot be retrieved
+    """
+    try:
+        # Get stats from task queue manager
+        stats = await task_queue.get_queue_stats()
+
+        # Extract and structure the response
+        return TaskStatsResponse(
+            status_counts=stats.get("status_counts", {}),
+            type_counts=stats.get("type_counts", {}),
+            avg_wait_time_seconds=stats.get("avg_wait_time_seconds", 0.0),
+            worker_count=stats.get("worker_count", 0),
+            active_workers=stats.get("active_workers", 0),
+            tasks_processed=stats.get("tasks_processed", 0),
+            tasks_failed=stats.get("tasks_failed", 0)
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get task queue statistics: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve task statistics: {str(e)}"
         )
 
 
