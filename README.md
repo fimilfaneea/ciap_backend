@@ -26,8 +26,8 @@ CIAP automates the collection and analysis of competitive intelligence data usin
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/fimilfaneea/ciap.git
-cd ciap
+git clone https://github.com/fimilfaneea/ciap_backend.git
+cd ciap_backend
 ```
 
 2. Create a virtual environment:
@@ -38,7 +38,6 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. Install dependencies:
 ```bash
-cd ciap
 pip install -r requirements.txt
 ```
 
