@@ -14,6 +14,7 @@ import logging
 from ...database import get_db, DatabaseOperations, Search
 from ...scrapers.manager import scraper_manager
 from ...task_queue.manager import task_queue, TaskPriority
+from ..schemas.common import PaginatedResponse, create_paginated_response
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +81,8 @@ class SearchResultItem(BaseModel):
     position: int
 
 
-class SearchListResponse(BaseModel):
-    """Response model for search list"""
-    searches: List[SearchDetailResponse]
-    total: int
-    page: int
-    per_page: int
+# SearchListResponse replaced by PaginatedResponse[SearchDetailResponse]
+# This ensures consistent pagination contract across all API endpoints
 
 
 # ============================================================
@@ -262,10 +259,10 @@ async def get_search(
         )
 
 
-@router.get("/", response_model=SearchListResponse)
+@router.get("/", response_model=PaginatedResponse[SearchDetailResponse])
 async def list_searches(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(10, ge=1, le=100, description="Number of records to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Number of records per page"),
     status: Optional[str] = Query(None, description="Filter by status"),
     db: AsyncSession = Depends(get_db)
 ):
@@ -273,13 +270,13 @@ async def list_searches(
     List all searches with pagination
 
     Args:
-        skip: Offset for pagination
-        limit: Number of results per page
+        page: Page number (1-indexed)
+        per_page: Number of results per page
         status: Optional status filter
         db: Database session
 
     Returns:
-        Paginated list of searches
+        Paginated list of searches with standard pagination metadata
     """
     try:
         # Build query
@@ -297,8 +294,11 @@ async def list_searches(
         total_result = await db.execute(count_query)
         total = total_result.scalar() or 0
 
+        # Calculate offset
+        skip = (page - 1) * per_page
+
         # Apply pagination
-        query = query.offset(skip).limit(limit)
+        query = query.offset(skip).limit(per_page)
 
         # Execute query
         result = await db.execute(query)
@@ -328,14 +328,12 @@ async def list_searches(
                 )
             )
 
-        # Calculate page number
-        page = (skip // limit) + 1 if limit > 0 else 1
-
-        return SearchListResponse(
-            searches=search_details,
+        # Create paginated response with standard fields
+        return create_paginated_response(
+            items=search_details,
             total=total,
             page=page,
-            per_page=limit
+            per_page=per_page
         )
 
     except Exception as e:

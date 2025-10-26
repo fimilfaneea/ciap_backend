@@ -178,6 +178,7 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json"
+    # Note: redirect_slashes defaults to True, which is standard for REST APIs
 )
 
 
@@ -320,61 +321,8 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health_check():
-    """
-    Health check endpoint
-
-    Checks status of:
-    - Database connection
-    - Ollama LLM service
-    - Task queue
-    - Cache
-
-    Returns:
-        Health status of all components
-    """
-    # Check database
-    db_healthy = await db_manager.health_check()
-
-    # Check Ollama
-    ollama_healthy = False
-    try:
-        from ..analyzers.ollama_client import ollama_client
-        ollama_healthy = await ollama_client.check_health()
-    except Exception as e:
-        logger.error(f"Ollama health check failed: {e}")
-
-    # Check task queue
-    queue_healthy = task_queue.running
-
-    # Check cache
-    cache_healthy = True
-    try:
-        # Test cache operation
-        await cache.set("health_check", "ok", ttl=60)
-        test_value = await cache.get("health_check")
-        cache_healthy = (test_value == "ok")
-    except Exception as e:
-        logger.error(f"Cache health check failed: {e}")
-        cache_healthy = False
-
-    # Aggregate checks
-    checks = {
-        "database": db_healthy,
-        "ollama": ollama_healthy,
-        "task_queue": queue_healthy,
-        "cache": cache_healthy
-    }
-
-    # Overall health (all components must be healthy)
-    overall_healthy = all(checks.values())
-
-    return {
-        "status": "healthy" if overall_healthy else "unhealthy",
-        "checks": checks,
-        "timestamp": time.time()
-    }
+# Health check endpoint moved to system router (/api/v1/health)
+# This ensures consistent API versioning across all endpoints
 
 
 # ============================================================
@@ -489,9 +437,16 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 # ============================================================
 
 # Import routers
-from .routes import search, tasks, analysis, export, scheduler
+from .routes import search, tasks, analysis, export, scheduler, system
 
-# Register routers
+# Register system router (health, stats, version)
+app.include_router(
+    system.router,
+    prefix=settings.API_PREFIX,
+    tags=["system"]
+)
+
+# Register feature routers
 app.include_router(
     search.router,
     prefix=f"{settings.API_PREFIX}/search",

@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 
 from ...task_queue.manager import task_queue, TaskPriority, TaskStatus
+from ..schemas.common import PaginatedResponse, to_paginated_response
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +62,8 @@ class TaskResponse(BaseModel):
     error: Optional[str] = Field(None, description="Error message if failed")
 
 
-class TaskListResponse(BaseModel):
-    """Response model for task list"""
-    tasks: List[TaskResponse]
-    total: int
-    page: int
-    per_page: int
+# TaskListResponse replaced by PaginatedResponse[TaskResponse]
+# This ensures consistent pagination contract across all API endpoints
 
 
 # ============================================================
@@ -168,10 +165,10 @@ async def get_task(task_id: int):
         )
 
 
-@router.get("/", response_model=TaskListResponse)
+@router.get("/", response_model=PaginatedResponse[TaskResponse])
 async def list_tasks(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(10, ge=1, le=100, description="Number of records to return"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Number of records per page"),
     status: Optional[str] = Query(None, description="Filter by status"),
     task_type: Optional[str] = Query(None, description="Filter by task type")
 ):
@@ -179,30 +176,25 @@ async def list_tasks(
     List tasks with pagination and filters
 
     Args:
-        skip: Offset for pagination
-        limit: Number of results per page
+        page: Page number (1-indexed)
+        per_page: Number of results per page
         status: Optional status filter
         task_type: Optional task type filter
 
     Returns:
-        Paginated list of tasks
+        Paginated list of tasks with standard pagination metadata
     """
     try:
-        # Get queue statistics
-        stats = await task_queue.get_queue_stats()
-
-        # For now, we'll return a simplified list
-        # A full implementation would require DatabaseOperations.get_paginated_task_queue
         from ...database import db_manager, DatabaseOperations
 
         async with db_manager.get_session() as session:
-            # Get paginated tasks
+            # Get paginated tasks using DatabaseOperations
             result = await DatabaseOperations.get_paginated_task_queue(
                 session=session,
-                page=(skip // limit) + 1,
-                per_page=limit,
-                status_filter=status,
-                type_filter=task_type
+                page=page,
+                per_page=per_page,
+                status=status,
+                task_type=task_type
             )
 
             # Convert to response format
@@ -211,20 +203,24 @@ async def list_tasks(
                 tasks.append(
                     TaskResponse(
                         task_id=item.id,
-                        type=item.type,
+                        type=item.task_type,  # Model uses task_type field
                         status=item.status,
                         priority=item.priority,
-                        created_at=item.created_at,
-                        result=item.result,
+                        created_at=item.scheduled_at,  # Model uses scheduled_at for created_at
+                        result=None,  # TaskQueue model doesn't have result field
                         error=item.error_message
                     )
                 )
 
-            return TaskListResponse(
-                tasks=tasks,
+            # Convert PaginatedResult to PaginatedResponse
+            return PaginatedResponse(
+                items=tasks,
                 total=result.total,
                 page=result.page,
-                per_page=result.per_page
+                per_page=result.per_page,
+                total_pages=result.total_pages,
+                has_next=result.has_next,
+                has_prev=result.has_prev
             )
 
     except Exception as e:

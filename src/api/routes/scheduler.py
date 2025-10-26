@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 
 from ...services.scheduler import scheduler
+from ..schemas.common import PaginatedResponse, create_paginated_response
 
 logger = logging.getLogger(__name__)
 
@@ -76,10 +77,8 @@ class JobResponse(BaseModel):
     trigger: str = Field(..., description="Trigger description")
 
 
-class JobListResponse(BaseModel):
-    """Response model for job list"""
-    jobs: List[JobResponse] = Field(..., description="List of scheduled jobs")
-    total: int = Field(..., description="Total number of jobs")
+# JobListResponse replaced by PaginatedResponse[JobResponse]
+# This ensures consistent pagination contract across all API endpoints
 
 
 class JobActionResponse(BaseModel):
@@ -215,15 +214,22 @@ async def schedule_recurring_export(request: ScheduleExportRequest):
         raise HTTPException(status_code=500, detail=f"Failed to schedule export: {e}")
 
 
-@router.get("/jobs", response_model=JobListResponse, status_code=200)
-async def list_scheduled_jobs():
+@router.get("/jobs", response_model=PaginatedResponse[JobResponse], status_code=200)
+async def list_scheduled_jobs(
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Number of records per page")
+):
     """
-    List all scheduled jobs
+    List all scheduled jobs with pagination
 
-    Get a list of all currently scheduled jobs with their details.
+    Get a paginated list of all currently scheduled jobs with their details.
+
+    Args:
+        page: Page number (1-indexed)
+        per_page: Number of records per page
 
     Returns:
-        List of jobs with total count
+        Paginated list of jobs with standard pagination metadata
 
     Raises:
         HTTPException 500: If listing fails
@@ -241,9 +247,17 @@ async def list_scheduled_jobs():
             for job in jobs
         ]
 
-        return JobListResponse(
-            jobs=job_responses,
-            total=len(job_responses)
+        # Apply manual pagination since scheduler.list_jobs() returns all jobs
+        total = len(job_responses)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated_jobs = job_responses[start_idx:end_idx]
+
+        return create_paginated_response(
+            items=paginated_jobs,
+            total=total,
+            page=page,
+            per_page=per_page
         )
 
     except Exception as e:
