@@ -11,7 +11,9 @@ import logging
 from .base import BaseScraper, ScraperException
 from .google import GoogleScraper
 from .bing import BingScraper
+from .google_api import GoogleCustomSearchAPI
 from ..database import db_manager, Search, SearchResult, ScrapingJob
+from ..config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ class ScraperManager:
 
     Features:
     - Multi-source parallel scraping
+    - Google Custom Search API support (recommended)
     - Database integration (Search, SearchResult, ScrapingJob)
     - Graceful error handling (continue if one source fails)
     - Statistics aggregation
@@ -37,6 +40,16 @@ class ScraperManager:
             "google": GoogleScraper(),
             "bing": BingScraper(),
         }
+
+        # Initialize Google Custom Search API if configured
+        self.google_api: Optional[GoogleCustomSearchAPI] = None
+        if settings.GOOGLE_API_ENABLED and settings.GOOGLE_API_KEY and settings.GOOGLE_SEARCH_ENGINE_ID:
+            self.google_api = GoogleCustomSearchAPI(
+                api_key=settings.GOOGLE_API_KEY,
+                search_engine_id=settings.GOOGLE_SEARCH_ENGINE_ID,
+                timeout=settings.SCRAPER_TIMEOUT
+            )
+            logger.info("Google Custom Search API enabled")
 
         self.default_sources = ["google", "bing"]
 
@@ -90,13 +103,22 @@ class ScraperManager:
         # Scrape in parallel using asyncio.gather
         tasks = []
         for source in sources:
-            scraper = self.scrapers[source]
-            task = self._scrape_source(
-                scraper,
-                query,
-                max_results_per_source,
-                **kwargs
-            )
+            # Use Google Custom Search API if enabled and source is google
+            if source == "google" and self.google_api:
+                logger.info("Using Google Custom Search API (recommended)")
+                task = self._scrape_google_api(
+                    query,
+                    max_results_per_source,
+                    **kwargs
+                )
+            else:
+                scraper = self.scrapers[source]
+                task = self._scrape_source(
+                    scraper,
+                    query,
+                    max_results_per_source,
+                    **kwargs
+                )
             tasks.append(task)
 
         # Execute all tasks in parallel with exception handling
@@ -160,12 +182,52 @@ class ScraperManager:
             return results
 
         except ScraperException as e:
-            logger.error(f"{scraper.name} scraping failed: {e}")
+            logger.error(f"{scraper.name} scraper exception: {e}")
             raise
 
+    async def _scrape_google_api(
+        self,
+        query: str,
+        max_results: int,
+        **kwargs
+    ) -> List[Dict]:
+        """
+        Scrape using Google Custom Search API
+
+        Args:
+            query: Search query
+            max_results: Maximum results
+            **kwargs: Additional parameters (lang, region, etc.)
+
+        Returns:
+            List of results
+
+        Raises:
+            Exception: On API failure
+        """
+        try:
+            logger.info(
+                f"Using Google Custom Search API for '{query}' "
+                f"(max {max_results} results)"
+            )
+
+            results = await self.google_api.search(
+                query=query,
+                max_results=max_results,
+                lang=kwargs.get("lang", "en"),
+                region=kwargs.get("region"),
+                date_range=kwargs.get("date_range")
+            )
+
+            logger.info(
+                f"Google API returned {len(results)} results"
+            )
+
+            return results
+
         except Exception as e:
-            logger.error(f"Unexpected error in {scraper.name}: {e}")
-            raise ScraperException(f"Scraping failed: {e}")
+            logger.error(f"Google API error: {e}")
+            raise
 
     async def scrape_and_save(
         self,

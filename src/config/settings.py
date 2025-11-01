@@ -107,6 +107,20 @@ class Settings(BaseSettings):
         description="Maximum Google results per search"
     )
 
+    # Google Custom Search API (recommended - no CAPTCHA issues)
+    GOOGLE_API_KEY: Optional[str] = Field(
+        default=None,
+        description="Google Custom Search API key (100 free queries/day)"
+    )
+    GOOGLE_SEARCH_ENGINE_ID: Optional[str] = Field(
+        default=None,
+        description="Google Custom Search Engine ID (cx parameter)"
+    )
+    GOOGLE_API_ENABLED: bool = Field(
+        default=False,
+        description="Use Google Custom Search API instead of web scraping"
+    )
+
     # Bing Scraper
     BING_SEARCH_URL: str = Field(
         default="https://www.bing.com/search",

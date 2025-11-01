@@ -19,8 +19,16 @@ source venv/bin/activate     # Linux/Mac
 # Install dependencies
 pip install -r requirements.txt
 
+# Install Playwright browsers (ONE-TIME SETUP, required for Scrapy-Playwright)
+python setup_playwright.py
+# OR manually: playwright install chromium
+
 # Create .env file from template
 cp .env.example .env         # Then edit with actual API keys
+
+# Optional: Install Ollama for local LLM support
+# Download from https://ollama.ai and run:
+ollama pull llama3.1:8b      # Or other models
 ```
 
 ### Database Operations
@@ -36,16 +44,27 @@ pytest tests/ -v
 ```
 
 ### API Server
+
+**CRITICAL: Always use `run.py` or `run_dev.py` to start the server, NOT `uvicorn` directly.**
+
+These startup scripts install the AsyncioSelectorReactor before FastAPI initializes, which is required for Scrapy-Playwright integration. Starting with `uvicorn` directly will cause reactor mismatch errors.
+
 ```bash
-# Start FastAPI development server
-uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000
+# Development mode (recommended for development)
+python run_dev.py
+# - Auto-reload on code changes
+# - Debug logging enabled
+# - Runs on 127.0.0.1:8000
+
+# Production mode
+python run.py
+# - No auto-reload (better performance)
+# - Info-level logging
+# - Runs on 0.0.0.0:8000
 
 # Access interactive API documentation
-# Swagger UI: http://localhost:8000/api/docs
-# ReDoc: http://localhost:8000/api/redoc
-
-# Production server (without reload)
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+# Swagger UI: http://localhost:8000/docs
+# ReDoc: http://localhost:8000/redoc
 ```
 
 ### Development Workflow
@@ -99,11 +118,18 @@ src/
 │   ├── handlers.py        # Task handlers (scrape, analyze, export)
 │   └── utils.py          # TaskChain, TaskGroup, wait_for_task
 │
-├── scrapers/       # Module 5: Web Scraper
-│   ├── base.py           # BaseScraper abstract class
-│   ├── google.py         # Google search scraper
-│   ├── bing.py           # Bing search scraper
-│   └── manager.py        # ScraperManager orchestrator
+├── scrapers/       # Module 5: Web Scraper (Scrapy Framework)
+│   ├── base.py           # BaseScraper abstract class (legacy)
+│   ├── google.py         # Google search scraper (legacy)
+│   ├── bing.py           # Bing search scraper (legacy)
+│   ├── manager.py        # ScraperManager orchestrator
+│   ├── scrapy_runner.py  # Async Scrapy runner with crochet
+│   ├── scrapy_settings.py # Scrapy configuration
+│   ├── items.py          # Scrapy item definitions
+│   ├── pipelines.py      # Scrapy pipelines (validation, cleaning, deduplication)
+│   └── spiders/          # Scrapy spiders
+│       ├── google_spider.py  # Google search spider
+│       └── bing_spider.py    # Bing search spider
 │
 ├── processors/     # Module 6: Data Processor
 │   ├── cleaner.py        # Data cleaning & deduplication
@@ -115,12 +141,16 @@ src/
 │
 ├── api/            # Module 8: REST API
 │   ├── main.py           # FastAPI app with lifespan, WebSocket
-│   └── routes/           # 5 route modules (search, tasks, analysis, export, scheduler)
-│       ├── search.py
-│       ├── tasks.py
-│       ├── analysis.py
-│       ├── export.py
-│       └── scheduler.py
+│   ├── schemas/          # Pydantic schemas for request/response
+│   │   ├── common.py     # Shared schemas (pagination, errors)
+│   │   └── __init__.py
+│   └── routes/           # API endpoints (all prefixed with /api/v1)
+│       ├── search.py     # Search operations (POST /search)
+│       ├── tasks.py      # Task queue management
+│       ├── analysis.py   # LLM analysis endpoints
+│       ├── export.py     # Export to CSV/Excel/JSON
+│       ├── scheduler.py  # Scheduled job management
+│       └── system.py     # System health, stats, diagnostics
 │
 ├── services/       # Module 9 & 10: Business Services
 │   ├── export_service.py # Export to CSV/Excel/JSON
@@ -171,6 +201,13 @@ await DatabaseOperations.bulk_insert_results_chunked(
 task = await DatabaseOperations.dequeue_task(session)  # Uses skip_locked=True
 ```
 
+**Scrapy Integration**: Scrapy (Twisted) + FastAPI (asyncio) bridged via crochet
+- **Reactor requirement**: AsyncioSelectorReactor must be installed before FastAPI starts
+- **Startup scripts**: `run.py` and `run_dev.py` handle reactor installation
+- **Never start directly**: Do NOT use `uvicorn src.api.main:app` - will fail with reactor errors
+- **Scrapy runner**: `scrapy_runner.py` uses crochet to run spiders in Twisted thread
+- **Playwright support**: Requires AsyncioSelectorReactor + WindowsSelectorEventLoopPolicy (Windows)
+
 ## Database Performance Features
 
 ### Optimizations Applied Automatically
@@ -220,6 +257,86 @@ api_port = settings.API_PORT
 - Prompt template loading from `config/prompts/`
 
 See `.env.example` for complete configuration template and `Backend_Modules/Mod_02_Config.md` for detailed documentation.
+
+## Google Custom Search API Integration
+
+**Recommended search method** - avoids CAPTCHA challenges and bot detection issues with web scraping.
+
+### Why Use Google API Instead of Web Scraping?
+
+**Web Scraping Issues**:
+- CAPTCHA challenges from Google
+- Bot detection and IP bans
+- Requires proxies, CAPTCHA solvers, anti-detection tools
+- Legal gray area
+- Unreliable results
+
+**Google Custom Search API Benefits**:
+- Official Google service - no CAPTCHA
+- 100 free queries per day
+- Clean, structured JSON responses
+- Reliable 99.9% uptime
+- Legal and authorized
+- $5 per 1000 queries beyond free tier
+
+### Setup
+
+1. **Get API Key**: https://console.cloud.google.com/apis/credentials
+2. **Create Search Engine**: https://programmablesearchengine.google.com/
+3. **Configure .env**:
+```bash
+GOOGLE_API_KEY=your_api_key_here
+GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id
+GOOGLE_API_ENABLED=true
+```
+
+See `docs/GOOGLE_API_SETUP.md` for detailed setup instructions.
+
+### Usage
+
+**Direct API usage**:
+```python
+from src.scrapers.google_api import search_google_api
+
+results = await search_google_api(
+    query="mango pickle",
+    api_key=settings.GOOGLE_API_KEY,
+    search_engine_id=settings.GOOGLE_SEARCH_ENGINE_ID,
+    max_results=10,
+    lang="en",
+    region="us"
+)
+```
+
+**Via ScraperManager** (automatically uses API when enabled):
+```python
+from src.scrapers.manager import ScraperManager
+
+manager = ScraperManager()
+results = await manager.scrape(
+    query="mango pickle",
+    sources=["google"],  # Uses API if GOOGLE_API_ENABLED=true
+    max_results_per_source=10
+)
+```
+
+**Response format**:
+```python
+{
+    "title": "Page title",
+    "url": "https://example.com/page",
+    "snippet": "Brief description...",
+    "position": 1,
+    "source": "google_api",
+    "scraped_at": "2025-01-15T10:30:00"
+}
+```
+
+### Pricing & Quotas
+
+- **Free tier**: 100 queries/day
+- **Paid tier**: $5 per 1000 queries (max 10k/day)
+- **Alternative**: Switch to SerpAPI or ScraperAPI for higher volume
 
 ## Cache System
 
@@ -338,17 +455,74 @@ results = await DatabaseOperations.search_products_fts(session, 'head*')
 results = await DatabaseOperations.search_products_fts(session, 'brand_name:sony')
 ```
 
+### Scrapy Web Scraping
+
+**Running Scrapy spiders from asyncio context**:
+
+```python
+from src.scrapers.scrapy_runner import run_google_spider, run_bing_spider
+
+# Google search
+results = await run_google_spider(
+    query="AI news",
+    max_results=100,
+    lang="en",
+    region="us",
+    date_range="d",  # d=day, w=week, m=month, y=year
+    timeout=180
+)
+
+# Bing search
+results = await run_bing_spider(
+    query="machine learning",
+    max_results=50,
+    lang="en",
+    region="us",
+    timeout=180
+)
+```
+
+**Scrapy initialization** (happens automatically in FastAPI lifespan):
+```python
+from src.scrapers.scrapy_runner import initialize_scrapy, shutdown_scrapy
+
+# Call once during app startup
+initialize_scrapy()
+
+# Call during app shutdown
+shutdown_scrapy()
+```
+
+**Scrapy pipelines** (automatic processing):
+1. `ValidationPipeline` (priority 100) - Validates required fields
+2. `CleaningPipeline` (priority 200) - Cleans/normalizes text
+3. `DeduplicationPipeline` (priority 300) - Removes duplicates by URL
+4. `CollectorPipeline` (priority 900) - Collects results for return
+
+**Scrapy settings** (`src/scrapers/scrapy_settings.py`):
+- Playwright enabled: JavaScript rendering for dynamic pages
+- Auto-throttle: Adaptive rate limiting based on response times
+- Retry logic: 3 retries with exponential backoff
+- Safety limits: 300s timeout, 500 items max, 100 pages max
+
 ## Testing Strategy
 
-### Test Organization (7 test files, 244 KB total)
+### Test Organization (11 test files)
 
-- `test_database.py`: Core CRUD operations, session management
-- `test_models.py`: Model validation, relationships, constraints
-- `test_integration.py`: End-to-end workflows
-- `test_concurrency.py`: Concurrent access, race conditions
-- `test_performance.py`: Bulk operations, query optimization
-- `test_transactions.py`: Transaction handling, rollback scenarios
-- `test_utils.py`: Helper functions, utilities
+**Module Tests**:
+- `test_cache.py`: Cache system, TTL expiration, specialized cache types
+- `test_task_queue.py`: Task queue, priority scheduling, retry logic
+- `test_scrapers.py`: Scrapy spiders, scraping functionality
+- `test_processors.py`: Data cleaning, deduplication, batch processing
+- `test_analyzers.py`: LLM analyzer, Ollama integration
+- `test_api.py`: API endpoints, request/response validation
+- `test_export_service.py`: Export to CSV/Excel/JSON
+- `test_scheduler.py`: APScheduler integration, recurring jobs
+
+**Integration Tests**:
+- `test_module6_integration.py`: Processor integration workflows
+- `test_module7_integration.py`: Analyzer integration workflows
+- `test_module8_integration.py`: API integration workflows
 
 ### Test Database Pattern
 
@@ -381,15 +555,50 @@ The `src/core/Documentation.md` (2487 lines) is the complete reference for the d
 - python-dotenv 1.0.0 (config)
 
 **Scraping**:
-- requests 2.31.0, beautifulsoup4 4.12.2, lxml 4.9.3
+- Scrapy 2.11.0+ (primary scraping framework)
+- scrapy-playwright 0.0.34+ (JavaScript rendering)
+- playwright 1.40.0+ (browser automation)
+- crochet 2.1.1+ (Twisted/asyncio bridge)
+- requests 2.31.0, beautifulsoup4 4.12.2, lxml 4.9.3 (legacy, backward compatibility)
 
 **LLM Integration**:
-- openai 1.3.5, anthropic 0.7.1
+- Ollama (local LLMs via HTTP API)
+- openai 1.3.5, anthropic 0.7.1 (optional cloud providers)
 
 **Testing & Dev**:
 - pytest 7.4.3, black 23.11.0
 
 ## Common Gotchas
+
+### Reactor/Event Loop Issues
+
+**CRITICAL: Server startup must use run.py or run_dev.py**
+
+The most common issue is starting the server incorrectly:
+
+```bash
+# WRONG - Will fail with reactor errors
+uvicorn src.api.main:app --reload
+
+# CORRECT - Installs reactor before FastAPI
+python run_dev.py  # Development
+python run.py      # Production
+```
+
+**Why this matters**:
+- Scrapy requires Twisted reactor (AsyncioSelectorReactor)
+- FastAPI uses asyncio event loop
+- Reactor must be installed BEFORE asyncio loop starts
+- On Windows: Must use WindowsSelectorEventLoopPolicy, not ProactorEventLoop
+- Once installed, reactor cannot be changed (process-wide singleton)
+
+**Symptoms of wrong reactor**:
+- `ReactorAlreadyInstalledError`
+- `NotImplementedError` from Playwright
+- "Event loop is closed" errors
+- Scrapy spiders hang indefinitely
+
+**Solution**: Always use startup scripts, never `uvicorn` directly.
 
 ### SQLite Limitations
 
@@ -508,35 +717,88 @@ When working on backend features, reference:
 
 ## Working with This Codebase
 
-### Adding a New Model
+### Adding a New API Endpoint
 
-1. Define in `src/core/models.py` with relationships
-2. Add indexes in `database.py` `_create_indexes()`
-3. Add CRUD operations to `db_ops.py`
-4. Consider FTS5 if text-searchable (update `fts_setup.py`)
-5. Write tests in `tests/`
+1. Create route function in appropriate `src/api/routes/*.py` file
+2. Add Pydantic schemas for request/response in `src/api/schemas/`
+3. Register router in `src/api/main.py` if new route module
+4. Use dependency injection for database sessions
+5. Write tests in `tests/test_api.py`
 
-### Adding Database Operations
-
-1. Add static method to `DatabaseOperations` class in `db_ops.py`
-2. Use existing patterns (pagination, streaming, chunking)
-3. Handle errors gracefully (operations auto-rollback)
-4. Write unit tests in `tests/test_database.py`
-5. Write integration tests if multiple operations involved
-
-### Debugging Database Issues
-
-Enable SQL echo:
+Example:
 ```python
-db_manager.engine = create_async_engine(url, echo=True)  # Logs all SQL
+# In src/api/routes/search.py
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+from ..dependencies import get_db_session
+
+router = APIRouter()
+
+@router.post("/search", response_model=SearchResponse)
+async def create_search(
+    request: SearchRequest,
+    session: AsyncSession = Depends(get_db_session)
+):
+    # Implementation
+    pass
 ```
 
-Check health:
+### Adding a New Scrapy Spider
+
+1. Create spider class in `src/scrapers/spiders/`
+2. Inherit from `scrapy.Spider` or use existing base
+3. Define `name`, `allowed_domains`, `start_requests()`
+4. Implement `parse()` method to yield items
+5. Items automatically processed by pipelines
+6. Add convenience function to `scrapy_runner.py`
+7. Write tests in `tests/test_scrapers.py`
+
+### Adding a New Database Model
+
+1. Define in `src/database/models.py` with relationships
+2. Add CRUD operations to `src/database/operations.py`
+3. Consider FTS5 if text-searchable (update `src/database/fts.py`)
+4. Create indexes in model definition or migration
+5. Write tests in appropriate test file
+
+### Adding a New Task Handler
+
+1. Define async handler function in `src/task_queue/handlers.py`
+2. Register handler with task queue in FastAPI lifespan
+3. Handler receives payload dict, returns result dict
+4. Use `@retry` decorator for automatic retries
+5. Write tests in `tests/test_task_queue.py`
+
+### Debugging Issues
+
+**Database**:
 ```python
+# Enable SQL echo
+db_manager.engine = create_async_engine(url, echo=True)
+
+# Check health
 is_healthy = await db_manager.health_check()
+
+# Get stats
+stats = await db_manager.get_stats()
 ```
 
-Verify indexes:
+**Scrapy**:
 ```python
-await session.execute(text("PRAGMA index_list('table_name')"))
+# Check which reactor is installed
+from twisted.internet import reactor
+print(f"Reactor: {reactor.__class__.__module__}.{reactor.__class__.__name__}")
+
+# Enable Scrapy debug logging in .env
+SCRAPY_LOG_LEVEL=DEBUG
 ```
+
+**Task Queue**:
+```python
+# Check task status
+status = await task_queue.get_task_status(task_id)
+
+# Get queue stats
+stats = await task_queue.get_stats()
+```
+- add latest to memory

@@ -9,6 +9,8 @@ CIAP automates the collection and analysis of competitive intelligence data usin
 ## ✨ Features
 
 - **Multi-Source Data Collection**: Automated scraping from Google and other search engines
+  - **Google Custom Search API** (recommended): 100 free queries/day, no CAPTCHA
+  - **Web Scraping** (Scrapy + Playwright): Fallback for high-volume needs
 - **AI-Powered Analysis**: LLM integration for sentiment analysis, competitor profiling, and trend identification
 - **Real-Time Insights**: Automated processing pipeline for timely intelligence updates
 - **Cost-Effective**: 70-90% cost reduction compared to commercial solutions
@@ -41,18 +43,25 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Set up environment variables:
+4. Install Playwright browsers (one-time setup):
+```powershell
+python setup_playwright.py
+# This downloads browser binaries (~150MB) for web scraping
+# Only needs to be run once per machine
+```
+
+5. Set up environment variables:
 ```powershell
 Copy-Item .env.example .env
 # Edit .env file with your API keys
 ```
 
-5. Initialize the database:
+6. Initialize the database:
 ```powershell
 python -m src.database.manager
 ```
 
-6. Run the application:
+7. Run the application:
 ```powershell
 # Development mode (with auto-reload)
 python run_dev.py
@@ -61,7 +70,7 @@ python run_dev.py
 python run.py
 ```
 
-7. Open your browser and navigate to:
+8. Open your browser and navigate to:
 ```
 http://localhost:8000
 ```
@@ -94,8 +103,14 @@ The `run_dev.py` and `run.py` scripts ensure the correct Twisted reactor (`Async
 
 Edit the `.env` file to configure:
 
-- **LLM API Keys**: Set your OpenAI or Anthropic API keys
-- **Scraping Settings**: Adjust delay and result limits
+- **Google Custom Search API** (Recommended):
+  - Get API key: https://console.cloud.google.com/apis/credentials
+  - Create search engine: https://programmablesearchengine.google.com/
+  - Set `GOOGLE_API_KEY` and `GOOGLE_SEARCH_ENGINE_ID`
+  - 100 free queries/day, no CAPTCHA challenges
+  - See `docs/GOOGLE_API_SETUP.md` for detailed setup
+- **LLM API Keys**: Set your OpenAI or Anthropic API keys (or use local Ollama)
+- **Scraping Settings**: Adjust delay and result limits for web scraping fallback
 - **API Settings**: Configure host and port
 
 ## 📚 API Documentation

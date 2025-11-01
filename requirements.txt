@@ -6,7 +6,7 @@ python-dotenv==1.0.0
 # Scraping - Scrapy Framework
 scrapy>=2.11.0
 scrapy-playwright>=0.0.34
-playwright>=1.40.0
+playwright>=1.40.0  # Note: After pip install, run: python setup_playwright.py
 crochet>=2.1.1
 itemadapter>=0.8.0
 
