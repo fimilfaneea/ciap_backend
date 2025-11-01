@@ -63,7 +63,6 @@ Edit your `.env` file:
 
 ```bash
 # Google Custom Search API
-GOOGLE_API_KEY=AIzaSyCBGgcUyjcurfrJGcCeofeGcXSgN2Ilwa4
 GOOGLE_SEARCH_ENGINE_ID=e389ee2f38773444d
 GOOGLE_API_ENABLED=true
 ```

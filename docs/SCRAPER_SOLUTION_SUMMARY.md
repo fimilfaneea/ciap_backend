@@ -75,7 +75,6 @@ Implemented official Google API as the **primary search method**, with web scrap
 
 3. **`.env`**
    - Added Google API configuration
-   - Set API key: `AIzaSyCBGgcUyjcurfrJGcCeofeGcXSgN2Ilwa4`
    - Set Search Engine ID: `e389ee2f38773444d`
    - Enabled API: `GOOGLE_API_ENABLED=true`
 
@@ -177,7 +176,6 @@ curl -X POST "http://localhost:8000/api/v1/search" \
 
 ```bash
 # .env file
-GOOGLE_API_KEY=AIzaSyCBGgcUyjcurfrJGcCeofeGcXSgN2Ilwa4
 GOOGLE_SEARCH_ENGINE_ID=e389ee2f38773444d
 GOOGLE_API_ENABLED=true
 ```
