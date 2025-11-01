@@ -39,7 +39,7 @@ This guide explains how to set up and use the Google Custom Search JSON API for 
 
 1. Go to [Credentials](https://console.cloud.google.com/apis/credentials)
 2. Click "Create Credentials" → "API Key"
-3. Copy the API key (e.g., `AIzaSyCBGgcUyjcurfrJGcCeofeGcXSgN2Ilwa4`)
+3. Copy the API key 
 4. (Optional) Click "Restrict Key" to add security:
    - Select "Restrict key" under API restrictions
    - Check "Custom Search API"
